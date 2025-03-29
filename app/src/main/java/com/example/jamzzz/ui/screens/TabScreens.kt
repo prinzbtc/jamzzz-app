@@ -142,13 +142,31 @@ fun FavoritesScreen(
 @Composable
 fun PlaylistsScreen(
     musicLibrary: MusicLibrary,
+    initialPlaylistId: String? = null,
     onPlaylistSelected: (Playlist) -> Unit,
     onTrackSelected: (MusicFile, List<MusicFile>) -> Unit = { _, _ -> }
 ) {
     val coroutineScope = rememberCoroutineScope()
     var showCreatePlaylistDialog by remember { mutableStateOf(false) }
     var newPlaylistName by remember { mutableStateOf("") }
-    var selectedPlaylist by remember { mutableStateOf<Playlist?>(null) }
+    // Initialize with saved playlist if available
+    var selectedPlaylist by remember { 
+        mutableStateOf<Playlist?>(
+            if (initialPlaylistId != null) {
+                musicLibrary.playlists.find { it.id == initialPlaylistId }
+            } else {
+                null
+            }
+        )
+    }
+    
+    // If we have an initialPlaylistId, notify the parent component
+    LaunchedEffect(Unit) {
+        if (initialPlaylistId != null && selectedPlaylist != null) {
+            onPlaylistSelected(selectedPlaylist!!)
+            println("DEBUG: Restored playlist ${selectedPlaylist!!.name} from saved state")
+        }
+    }
     
     // Handle back button press
     BackHandler(enabled = selectedPlaylist != null) {

@@ -7,6 +7,7 @@ import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -35,9 +36,18 @@ data class TabItem(
 // Tabbed screen composable
 @OptIn(com.google.accompanist.pager.ExperimentalPagerApi::class)
 @Composable
-fun TabbedScreen(tabs: List<TabItem>) {
-    val pagerState = rememberPagerState(initialPage = 0)
+fun TabbedScreen(
+    tabs: List<TabItem>,
+    initialTabIndex: Int = 0,
+    onTabChanged: (Int) -> Unit = {}
+) {
+    val pagerState = rememberPagerState(initialPage = initialTabIndex)
     val coroutineScope = rememberCoroutineScope()
+    
+    // Notify about tab changes
+    LaunchedEffect(pagerState.currentPage) {
+        onTabChanged(pagerState.currentPage)
+    }
     
     Column(modifier = Modifier.fillMaxSize()) {
         // Tab row

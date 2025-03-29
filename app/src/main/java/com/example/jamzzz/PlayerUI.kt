@@ -51,6 +51,9 @@ class PlayerUI : ComponentActivity() {
     private lateinit var exoPlayer: ExoPlayer
     private val PREFS_NAME = "JamzzzPlayerPrefs"
     private val KEY_LAST_TRACK_ID = "lastTrackId"
+    private val KEY_LAST_TAB_INDEX = "lastTabIndex"
+    private val KEY_LAST_QUEUE_SOURCE = "lastQueueSource"
+    private val KEY_LAST_PLAYLIST_ID = "lastPlaylistId"
     
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -58,15 +61,21 @@ class PlayerUI : ComponentActivity() {
         // Initialize ExoPlayer
         exoPlayer = ExoPlayer.Builder(this).build()
         
-        // Get last track ID from SharedPreferences
+        // Get saved state from SharedPreferences
         val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val lastTrackId = prefs.getLong(KEY_LAST_TRACK_ID, -1L)
+        val lastTabIndex = prefs.getInt(KEY_LAST_TAB_INDEX, 0)
+        val lastQueueSource = prefs.getString(KEY_LAST_QUEUE_SOURCE, "AllSongs") ?: "AllSongs"
+        val lastPlaylistId = prefs.getString(KEY_LAST_PLAYLIST_ID, null)
         
         setContent {
             JamzzzTheme(darkTheme = true) {
                 MainApp(
                     exoPlayer = exoPlayer,
                     initialTrackId = if (lastTrackId != -1L) lastTrackId else null,
+                    initialTabIndex = lastTabIndex,
+                    initialQueueSource = lastQueueSource,
+                    initialPlaylistId = lastPlaylistId,
                     onOpenEqualizer = { openEqualizerActivity() }
                 )
             }
@@ -95,6 +104,9 @@ class PlayerUI : ComponentActivity() {
 fun MainApp(
     exoPlayer: ExoPlayer,
     initialTrackId: Long? = null,
+    initialTabIndex: Int = 0,
+    initialQueueSource: String = "AllSongs",
+    initialPlaylistId: String? = null,
     onOpenEqualizer: () -> Unit = {}
 ) {
     // Initialize MusicLibrary
@@ -108,21 +120,40 @@ fun MainApp(
     var duration by remember { mutableStateOf(0L) }
     var permissionGranted by remember { mutableStateOf(false) }
     
-    // Track which queue is currently active
-    var activeQueueSource by remember { mutableStateOf("AllSongs") } // Can be "AllSongs", "Favorites", or "Playlist"
+    // Track which queue is currently active - initialize with saved value
+    var activeQueueSource by remember { mutableStateOf(initialQueueSource) } // Can be "AllSongs", "Favorites", or "Playlist"
     
     // Store the current queue songs for proper navigation
     var currentQueueSongs by remember { mutableStateOf<List<MusicFile>>(emptyList()) }
     
+    // Track the current playlist ID when in playlist mode - initialize with saved value
+    var currentPlaylistId by remember { mutableStateOf(initialPlaylistId) }
+    
+    // Track the current tab index
+    var currentTabIndex by remember { mutableStateOf(initialTabIndex) }
+    
     val coroutineScope = rememberCoroutineScope()
     
     // Function to save current state to SharedPreferences
-    fun saveCurrentState() {
+    fun saveCurrentState(tabIndex: Int? = null) {
         val prefs = context.getSharedPreferences("JamzzzPlayerPrefs", Context.MODE_PRIVATE)
         val editor = prefs.edit()
         
         selectedTrack?.let { track ->
             editor.putLong("lastTrackId", track.id)
+        }
+        
+        // Save the active tab index if provided
+        if (tabIndex != null) {
+            editor.putInt("lastTabIndex", tabIndex)
+        }
+        
+        // Save the active queue source
+        editor.putString("lastQueueSource", activeQueueSource)
+        
+        // If we're in a playlist, save the playlist ID
+        if (activeQueueSource == "Playlist" && currentPlaylistId != null) {
+            editor.putString("lastPlaylistId", currentPlaylistId)
         }
         
         editor.apply()
@@ -316,8 +347,11 @@ fun MainApp(
                         // Update the currently playing track in MusicLibrary
                         musicLibrary.setCurrentlyPlayingTrack(track)
                         
-                        // Save track selection to preferences
-                        saveCurrentState()
+                        // Update the active queue source
+                        activeQueueSource = "AllSongs"
+                        
+                        // Save track selection and tab to preferences
+                        saveCurrentState(tabIndex = currentTabIndex)
                         
                         // Store all songs for proper queue navigation
                         val allSongs = ArrayList(musicFiles)
@@ -342,8 +376,11 @@ fun MainApp(
                         // Update the currently playing track in MusicLibrary
                         musicLibrary.setCurrentlyPlayingTrack(track)
                         
-                        // Save track selection to preferences
-                        saveCurrentState()
+                        // Update the active queue source
+                        activeQueueSource = "Favorites"
+                        
+                        // Save track selection and tab to preferences
+                        saveCurrentState(tabIndex = currentTabIndex)
                         
                         // Queue all favorite songs
                         // Convert favorite URIs to MusicFile objects
@@ -371,11 +408,27 @@ fun MainApp(
             title = "Playlists",
             icon = Icons.Filled.List,
             screen = {
+                // If we have a saved playlist ID and we're in the Playlists tab, try to restore it
+                LaunchedEffect(Unit) {
+                    if (activeQueueSource == "Playlist" && currentPlaylistId != null) {
+                        // Find the playlist by ID
+                        val savedPlaylist = musicLibrary.playlists.find { it.id == currentPlaylistId }
+                        if (savedPlaylist != null) {
+                            println("DEBUG: Restoring playlist ${savedPlaylist.name}")
+                            // This will trigger the onPlaylistSelected callback
+                        }
+                    }
+                }
+                
                 PlaylistsScreen(
                     musicLibrary = musicLibrary,
-                    onPlaylistSelected = { _ ->
-                        // No need to do anything when a playlist is selected,
-                        // we'll only change the queue when a song is selected from the playlist
+                    initialPlaylistId = if (activeQueueSource == "Playlist") currentPlaylistId else null,
+                    onPlaylistSelected = { playlist ->
+                        // Save the current playlist ID
+                        currentPlaylistId = playlist.id
+                        // Save to preferences
+                        saveCurrentState(tabIndex = currentTabIndex)
+                        println("DEBUG: Selected playlist ${playlist.name} with ID ${playlist.id}")
                     },
                     onTrackSelected = { track, playlistSongs ->
                         selectedTrack = track
@@ -383,8 +436,24 @@ fun MainApp(
                         // Update the currently playing track in MusicLibrary
                         musicLibrary.setCurrentlyPlayingTrack(track)
                         
-                        // Save track selection to preferences
-                        saveCurrentState()
+                        // Update the active queue source
+                        activeQueueSource = "Playlist"
+                        
+                        // Make sure we have the current playlist ID
+                        if (currentPlaylistId == null) {
+                            // Try to find the playlist ID from the musicLibrary
+                            val playlist = musicLibrary.playlists.find { playlist ->
+                                playlist.songs.any { songUri ->
+                                    track.uri.toString() == songUri
+                                }
+                            }
+                            if (playlist != null) {
+                                currentPlaylistId = playlist.id
+                            }
+                        }
+                        
+                        // Save track selection and playlist to preferences
+                        saveCurrentState(tabIndex = currentTabIndex)
                         
                         // Store the current playlist songs for proper queue navigation
                         val currentPlaylistSongs = ArrayList(playlistSongs)
@@ -484,7 +553,17 @@ fun MainApp(
             Column(modifier = Modifier.fillMaxSize()) {
                 // Tabs take most of the screen
                 Box(modifier = Modifier.weight(1f)) {
-                    TabbedScreen(tabs = tabs)
+                    TabbedScreen(
+                        tabs = tabs,
+                        initialTabIndex = initialTabIndex,
+                        onTabChanged = { newTabIndex ->
+                            // Update the current tab index
+                            currentTabIndex = newTabIndex
+                            // Save the tab index to preferences
+                            saveCurrentState(tabIndex = newTabIndex)
+                            println("DEBUG: Tab changed to $newTabIndex")
+                        }
+                    )
                 }
                 
                 // Player at the bottom with swipe-to-expand functionality
