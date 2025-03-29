@@ -30,13 +30,21 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import com.example.jamzzz.api.MusicMetadataService
+import com.example.jamzzz.utils.MediaStoreUtils.getAlbumArtUri
+import android.util.Log
 
 data class MusicFile(
     val id: Long,
     val title: String,
     val artist: String,
     val duration: Long,
-    val uri: Uri
+    val uri: Uri,
+    val albumArtUrl: String? = null,
+    val album: String? = null,
+    val year: String? = null,
+    val genre: String? = null,
+    val trackNumber: Int? = null
 )
 
 @Composable
@@ -325,7 +333,7 @@ suspend fun loadMusicFilesFromFolder(context: Context, folder: java.io.File): Li
  * @param exoPlayer Optional ExoPlayer instance to prepare with initial track
  * @param initialTrackId Optional ID of track to select initially
  */
-suspend fun loadAllMusicFilesFromDevice(context: Context, exoPlayer: ExoPlayer? = null, initialTrackId: Long? = null): List<MusicFile> = withContext(Dispatchers.IO) {
+suspend fun loadAllMusicFilesFromDevice(context: Context, exoPlayer: ExoPlayer? = null, initialTrackId: Long? = null, fetchOnlineMetadata: Boolean = true): List<MusicFile> = withContext(Dispatchers.IO) {
     val musicFiles = mutableListOf<MusicFile>()
     
     try {
@@ -340,7 +348,10 @@ suspend fun loadAllMusicFilesFromDevice(context: Context, exoPlayer: ExoPlayer? 
             MediaStore.Audio.Media.TITLE,
             MediaStore.Audio.Media.ARTIST,
             MediaStore.Audio.Media.DURATION,
-            MediaStore.Audio.Media.DATA
+            MediaStore.Audio.Media.DATA,
+            MediaStore.Audio.Media.ALBUM,
+            MediaStore.Audio.Media.YEAR,
+            MediaStore.Audio.Media.TRACK
         )
         
         // Only get music files, exclude recordings (can be refined further if needed)
@@ -357,17 +368,26 @@ suspend fun loadAllMusicFilesFromDevice(context: Context, exoPlayer: ExoPlayer? 
             val titleColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
             val artistColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
             val durationColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
+            val albumColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM)
+            val yearColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.YEAR)
+            val trackColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TRACK)
             
             while (cursor.moveToNext()) {
                 val id = cursor.getLong(idColumn)
                 val title = cursor.getString(titleColumn) ?: "Unknown Title"
                 val artist = cursor.getString(artistColumn) ?: "Unknown Artist"
                 val duration = cursor.getLong(durationColumn)
+                val album = cursor.getString(albumColumn)
+                val year = cursor.getString(yearColumn)
+                val trackNumber = cursor.getInt(trackColumn)
                 
                 val contentUri = ContentUris.withAppendedId(
                     MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
                     id
                 )
+                
+                // Try to get album art from MediaStore first
+                val albumArtUri = getAlbumArtUri(context, id)
                 
                 musicFiles.add(
                     MusicFile(
@@ -375,13 +395,42 @@ suspend fun loadAllMusicFilesFromDevice(context: Context, exoPlayer: ExoPlayer? 
                         title = title,
                         artist = artist,
                         duration = duration,
-                        uri = contentUri
+                        uri = contentUri,
+                        album = album,
+                        year = year,
+                        trackNumber = trackNumber,
+                        albumArtUrl = albumArtUri?.toString()
                     )
                 )
             }
         }
     } catch (e: Exception) {
         e.printStackTrace()
+    }
+    
+    // If enabled, try to fetch additional metadata from online sources
+    if (fetchOnlineMetadata) {
+        try {
+            val metadataService = MusicMetadataService()
+            val updatedFiles = mutableListOf<MusicFile>()
+            
+            // Process each music file to fetch metadata
+            for (musicFile in musicFiles) {
+                // Skip files that already have album art
+                if (musicFile.albumArtUrl != null) {
+                    updatedFiles.add(musicFile)
+                    continue
+                }
+                
+                // Fetch metadata from Last.fm
+                val updatedFile = metadataService.fetchMetadata(musicFile)
+                updatedFiles.add(updatedFile)
+            }
+            
+            return@withContext updatedFiles
+        } catch (e: Exception) {
+            Log.e("MusicBrowser", "Error fetching online metadata: ${e.message}")
+        }
     }
     
     return@withContext musicFiles

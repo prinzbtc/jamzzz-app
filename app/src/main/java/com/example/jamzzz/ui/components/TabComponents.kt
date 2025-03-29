@@ -7,7 +7,11 @@ import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -140,8 +144,11 @@ fun PlaylistItem(
     name: String,
     songCount: Int,
     onClick: () -> Unit,
-    onMenuClick: () -> Unit
+    onRenameClick: () -> Unit,
+    onDeleteClick: () -> Unit
 ) {
+    var showMenu by remember { mutableStateOf(false) }
+    
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -177,12 +184,50 @@ fun PlaylistItem(
                 )
             }
             
-            IconButton(onClick = onMenuClick) {
-                Icon(
-                    imageVector = Icons.Filled.MoreVert,
-                    contentDescription = "More Options",
-                    tint = MaterialTheme.colors.primary
-                )
+            Box {
+                IconButton(onClick = { showMenu = true }) {
+                    Icon(
+                        imageVector = Icons.Filled.MoreVert,
+                        contentDescription = "More Options",
+                        tint = MaterialTheme.colors.primary
+                    )
+                }
+                
+                DropdownMenu(
+                    expanded = showMenu,
+                    onDismissRequest = { showMenu = false },
+                    modifier = Modifier.background(MaterialTheme.colors.surface)
+                ) {
+                    DropdownMenuItem(onClick = {
+                        showMenu = false
+                        onRenameClick()
+                    }) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Filled.Edit,
+                                contentDescription = "Rename Playlist",
+                                tint = TextWhite
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Rename playlist", color = TextWhite)
+                        }
+                    }
+                    
+                    DropdownMenuItem(onClick = {
+                        showMenu = false
+                        onDeleteClick()
+                    }) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Filled.Delete,
+                                contentDescription = "Delete Playlist",
+                                tint = Color.Red
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Delete playlist", color = Color.Red)
+                        }
+                    }
+                }
             }
         }
     }

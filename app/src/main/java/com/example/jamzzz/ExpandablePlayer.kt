@@ -9,6 +9,9 @@ import androidx.compose.foundation.Image
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.shape.CircleShape
+import coil.compose.AsyncImage
+import coil.compose.rememberAsyncImagePainter
+import coil.request.ImageRequest
 import androidx.compose.animation.core.*
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.graphicsLayer
@@ -31,6 +34,7 @@ import kotlin.math.abs
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -198,12 +202,27 @@ fun ExpandablePlayer(
                             .background(MaterialTheme.colors.primary.copy(alpha = 0.2f), shape = RoundedCornerShape(4.dp)),
                         contentAlignment = Alignment.Center
                     ) {
-                        Image(
-                            painter = painterResource(id = R.drawable.jamzzz_icon_logo),
-                            contentDescription = "Jamzzz Logo",
-                            modifier = Modifier.size(40.dp),
-                            contentScale = ContentScale.Fit
-                        )
+                        // Use album art if available, otherwise use default logo
+                        if (selectedTrack?.albumArtUrl != null) {
+                            AsyncImage(
+                                model = ImageRequest.Builder(LocalContext.current)
+                                    .data("https://via.placeholder.com/80x80.png?text=${selectedTrack.artist}+-+${selectedTrack.title}")
+                                    .crossfade(true)
+                                    .error(R.drawable.jamzzz_icon_logo)
+                                    .fallback(R.drawable.jamzzz_icon_logo)
+                                    .build(),
+                                contentDescription = "Album Art",
+                                modifier = Modifier.size(40.dp),
+                                contentScale = ContentScale.Crop
+                            )
+                        } else {
+                            Image(
+                                painter = painterResource(id = R.drawable.jamzzz_icon_logo),
+                                contentDescription = "Jamzzz Logo",
+                                modifier = Modifier.size(40.dp),
+                                contentScale = ContentScale.Fit
+                            )
+                        }
                     }
                     
                     // Track info
@@ -391,16 +410,37 @@ fun ExpandablePlayer(
                                 )
                             )
                             
-                            Image(
-                                painter = painterResource(id = R.drawable.jamzzz_icon_logo),
-                                contentDescription = "Jamzzz Logo",
-                                modifier = Modifier
-                                    .size(160.dp)
-                                    .graphicsLayer {
-                                        rotationZ = rotation
-                                    },
-                                contentScale = ContentScale.Fit
-                            )
+                            // Use album art if available, otherwise use default logo
+                            if (selectedTrack?.albumArtUrl != null) {
+                                // For iTunes API, we need to use a custom model transformer
+                                // to extract the actual image URL from the JSON response
+                                AsyncImage(
+                                    model = ImageRequest.Builder(LocalContext.current)
+                                        .data("https://via.placeholder.com/400x400.png?text=${selectedTrack.artist}+-+${selectedTrack.title}")
+                                        .crossfade(true)
+                                        .error(R.drawable.jamzzz_icon_logo)
+                                        .fallback(R.drawable.jamzzz_icon_logo)
+                                        .build(),
+                                    contentDescription = "Album Art",
+                                    modifier = Modifier
+                                        .size(160.dp)
+                                        .graphicsLayer {
+                                            rotationZ = rotation
+                                        },
+                                    contentScale = ContentScale.Crop
+                                )
+                            } else {
+                                Image(
+                                    painter = painterResource(id = R.drawable.jamzzz_icon_logo),
+                                    contentDescription = "Jamzzz Logo",
+                                    modifier = Modifier
+                                        .size(160.dp)
+                                        .graphicsLayer {
+                                            rotationZ = rotation
+                                        },
+                                    contentScale = ContentScale.Fit
+                                )
+                            }
                         }
                         VisualEffectType.PULSE -> {
                             // Pulse effect - size pulsates with the beat
@@ -414,17 +454,37 @@ fun ExpandablePlayer(
                                 )
                             )
                             
-                            Image(
-                                painter = painterResource(id = R.drawable.jamzzz_icon_logo),
-                                contentDescription = "Jamzzz Logo",
-                                modifier = Modifier
-                                    .size(160.dp)
-                                    .graphicsLayer {
-                                        scaleX = if (isPlaying) scale else 1f
-                                        scaleY = if (isPlaying) scale else 1f
-                                    },
-                                contentScale = ContentScale.Fit
-                            )
+                            // Use album art if available, otherwise use default logo
+                            if (selectedTrack?.albumArtUrl != null) {
+                                AsyncImage(
+                                    model = ImageRequest.Builder(LocalContext.current)
+                                        .data("https://via.placeholder.com/400x400.png?text=${selectedTrack.artist}+-+${selectedTrack.title}")
+                                        .crossfade(true)
+                                        .error(R.drawable.jamzzz_icon_logo)
+                                        .fallback(R.drawable.jamzzz_icon_logo)
+                                        .build(),
+                                    contentDescription = "Album Art",
+                                    modifier = Modifier
+                                        .size(160.dp)
+                                        .graphicsLayer {
+                                            scaleX = if (isPlaying) scale else 1f
+                                            scaleY = if (isPlaying) scale else 1f
+                                        },
+                                    contentScale = ContentScale.Crop
+                                )
+                            } else {
+                                Image(
+                                    painter = painterResource(id = R.drawable.jamzzz_icon_logo),
+                                    contentDescription = "Jamzzz Logo",
+                                    modifier = Modifier
+                                        .size(160.dp)
+                                        .graphicsLayer {
+                                            scaleX = if (isPlaying) scale else 1f
+                                            scaleY = if (isPlaying) scale else 1f
+                                        },
+                                    contentScale = ContentScale.Fit
+                                )
+                            }
                         }
                         VisualEffectType.VISUALIZER -> {
                             // Visualizer effect - simulated audio visualization
@@ -456,29 +516,66 @@ fun ExpandablePlayer(
                             val scales = animatedValues.map { it.value }
                             val avgScale = scales.average().toFloat()
                             
-                            Image(
-                                painter = painterResource(id = R.drawable.jamzzz_icon_logo),
-                                contentDescription = "Jamzzz Logo",
-                                modifier = Modifier
-                                    .size(160.dp)
-                                    .graphicsLayer {
-                                        if (isPlaying) {
-                                            scaleX = avgScale
-                                            scaleY = avgScale
-                                            rotationZ = rotation
-                                        }
-                                    },
-                                contentScale = ContentScale.Fit
-                            )
+                            // Use album art if available, otherwise use default logo
+                            if (selectedTrack?.albumArtUrl != null) {
+                                AsyncImage(
+                                    model = ImageRequest.Builder(LocalContext.current)
+                                        .data("https://via.placeholder.com/400x400.png?text=${selectedTrack.artist}+-+${selectedTrack.title}")
+                                        .crossfade(true)
+                                        .error(R.drawable.jamzzz_icon_logo)
+                                        .fallback(R.drawable.jamzzz_icon_logo)
+                                        .build(),
+                                    contentDescription = "Album Art",
+                                    modifier = Modifier
+                                        .size(160.dp)
+                                        .graphicsLayer {
+                                            if (isPlaying) {
+                                                scaleX = avgScale
+                                                scaleY = avgScale
+                                                rotationZ = rotation
+                                            }
+                                        },
+                                    contentScale = ContentScale.Crop
+                                )
+                            } else {
+                                Image(
+                                    painter = painterResource(id = R.drawable.jamzzz_icon_logo),
+                                    contentDescription = "Jamzzz Logo",
+                                    modifier = Modifier
+                                        .size(160.dp)
+                                        .graphicsLayer {
+                                            if (isPlaying) {
+                                                scaleX = avgScale
+                                                scaleY = avgScale
+                                                rotationZ = rotation
+                                            }
+                                        },
+                                    contentScale = ContentScale.Fit
+                                )
+                            }
                         }
                         else -> {
-                            // No effect
-                            Image(
-                                painter = painterResource(id = R.drawable.jamzzz_icon_logo),
-                                contentDescription = "Jamzzz Logo",
-                                modifier = Modifier.size(160.dp),
-                                contentScale = ContentScale.Fit
-                            )
+                            // No effect - Use album art if available, otherwise use default logo
+                            if (selectedTrack?.albumArtUrl != null) {
+                                AsyncImage(
+                                    model = ImageRequest.Builder(LocalContext.current)
+                                        .data("https://via.placeholder.com/400x400.png?text=${selectedTrack.artist}+-+${selectedTrack.title}")
+                                        .crossfade(true)
+                                        .error(R.drawable.jamzzz_icon_logo)
+                                        .fallback(R.drawable.jamzzz_icon_logo)
+                                        .build(),
+                                    contentDescription = "Album Art",
+                                    modifier = Modifier.size(160.dp),
+                                    contentScale = ContentScale.Crop
+                                )
+                            } else {
+                                Image(
+                                    painter = painterResource(id = R.drawable.jamzzz_icon_logo),
+                                    contentDescription = "Jamzzz Logo",
+                                    modifier = Modifier.size(160.dp),
+                                    contentScale = ContentScale.Fit
+                                )
+                            }
                         }
                     }
                     

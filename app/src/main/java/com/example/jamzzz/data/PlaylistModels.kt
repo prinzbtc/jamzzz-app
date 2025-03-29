@@ -106,6 +106,7 @@ class MusicLibrary(private val context: Context) {
     // This is a placeholder method that should be implemented to return all music files
     // For now, it will be used by the UI to convert URI strings to MusicFile objects
     private var _allMusicFiles: List<MusicFile> = emptyList()
+    private var _currentlyPlayingTrack: MusicFile? = null
     
     fun setAllMusicFiles(musicFiles: List<MusicFile>) {
         _allMusicFiles = musicFiles
@@ -113,6 +114,14 @@ class MusicLibrary(private val context: Context) {
     
     fun getAllMusicFiles(): List<MusicFile> {
         return _allMusicFiles
+    }
+    
+    fun setCurrentlyPlayingTrack(track: MusicFile?) {
+        _currentlyPlayingTrack = track
+    }
+    
+    fun getCurrentlyPlayingTrack(): MusicFile? {
+        return _currentlyPlayingTrack
     }
     
     // Save favorites to SharedPreferences

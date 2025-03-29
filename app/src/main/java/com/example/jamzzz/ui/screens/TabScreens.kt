@@ -84,9 +84,19 @@ fun FavoritesScreen(
     onTrackSelected: (MusicFile) -> Unit,
     musicLibrary: MusicLibrary
 ) {
+    // Use the same ordering as in the MusicLibrary's favorites list
     val favoriteFiles = remember(musicFiles, musicLibrary.favorites) {
-        musicFiles.filter { musicFile -> 
-            musicLibrary.isFavorite(musicFile)
+        // Convert favorite URIs to MusicFile objects in the same order as they appear in favorites
+        musicLibrary.favorites.mapNotNull { favoriteUri ->
+            musicFiles.find { it.uri.toString() == favoriteUri }
+        }
+    }
+    
+    // Debug log the favorite songs in the UI
+    LaunchedEffect(favoriteFiles) {
+        println("DEBUG: FavoritesScreen displaying ${favoriteFiles.size} songs")
+        favoriteFiles.forEachIndexed { index, song ->
+            println("DEBUG: UI Favorites song $index: ${song.title} (ID: ${song.id})")
         }
     }
     
@@ -142,7 +152,13 @@ fun PlaylistsScreen(
     
     // Handle back button press
     BackHandler(enabled = selectedPlaylist != null) {
-        selectedPlaylist = null
+        // Safely set selectedPlaylist to null
+        try {
+            selectedPlaylist = null
+        } catch (e: Exception) {
+            // Log the error but don't crash
+            println("Error handling back navigation: ${e.message}")
+        }
     }
     
     if (showCreatePlaylistDialog) {
@@ -246,7 +262,14 @@ fun PlaylistsScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = { selectedPlaylist = null }) {
+                    IconButton(onClick = { 
+                        try {
+                            selectedPlaylist = null 
+                        } catch (e: Exception) {
+                            // Log the error but don't crash
+                            println("Error handling back button click: ${e.message}")
+                        }
+                    }) {
                         Icon(
                             imageVector = Icons.Default.ArrowBack,
                             contentDescription = "Back to Playlists",
@@ -268,12 +291,20 @@ fun PlaylistsScreen(
                         val firstSong = allMusicFiles.find { it.uri.toString() == firstSongUri }
                         
                         // Convert playlist song URIs to MusicFile objects
+                        // Maintain the order of songs as they appear in the playlist
                         val playlistMusicFiles = selectedPlaylist!!.songs.mapNotNull { songUri ->
                             allMusicFiles.find { it.uri.toString() == songUri }
                         }
                         
+                        // Debug log
+                        println("DEBUG: Play all button clicked for playlist ${selectedPlaylist!!.name}")
+                        playlistMusicFiles.forEachIndexed { index, song ->
+                            println("DEBUG: Queue song $index: ${song.title}")
+                        }
+                        
                         // Play the first song if found
                         if (firstSong != null && playlistMusicFiles.isNotEmpty()) {
+                            println("DEBUG: Playing first song ${firstSong.title} from playlist")
                             onTrackSelected(firstSong, playlistMusicFiles)
                         }
                     }) {
@@ -305,16 +336,27 @@ fun PlaylistsScreen(
                     val allMusicFiles = musicLibrary.getAllMusicFiles()
                     
                     // Convert song URIs to MusicFile objects
+                    // Maintain the order of songs as they appear in the playlist
                     val playlistMusicFiles = selectedPlaylist!!.songs.mapNotNull { songUri ->
                         allMusicFiles.find { it.uri.toString() == songUri }
+                    }
+                    
+                    // Debug log the playlist songs
+                    println("DEBUG: Playlist ${selectedPlaylist!!.name} has ${playlistMusicFiles.size} songs")
+                    playlistMusicFiles.forEachIndexed { index, song ->
+                        println("DEBUG: Playlist song $index: ${song.title}")
                     }
                     
                     items(playlistMusicFiles) { musicFile ->
                         MusicFileItem(
                             musicFile = musicFile,
-                            isSelected = false,
+                            isSelected = musicFile.id == musicLibrary.getCurrentlyPlayingTrack()?.id,
                             isFavorite = musicLibrary.isFavorite(musicFile),
-                            onTrackSelected = { onTrackSelected(musicFile, playlistMusicFiles) },
+                            onTrackSelected = { 
+                                // Make sure we're passing the exact playlist songs list
+                                println("DEBUG: Selected ${musicFile.title} from playlist ${selectedPlaylist!!.name}")
+                                onTrackSelected(musicFile, playlistMusicFiles)
+                            },
                             onToggleFavorite = {
                                 if (musicLibrary.isFavorite(musicFile)) {
                                     musicLibrary.removeFromFavorites(musicFile)
