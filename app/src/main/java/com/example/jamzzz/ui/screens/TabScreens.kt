@@ -146,37 +146,38 @@ fun PlaylistsScreen(
     onPlaylistSelected: (Playlist) -> Unit,
     onTrackSelected: (MusicFile, List<MusicFile>) -> Unit = { _, _ -> }
 ) {
-    val coroutineScope = rememberCoroutineScope()
+    // State variables
     var showCreatePlaylistDialog by remember { mutableStateOf(false) }
     var newPlaylistName by remember { mutableStateOf("") }
-    // Initialize with saved playlist if available
-    var selectedPlaylist by remember { 
-        mutableStateOf<Playlist?>(
-            if (initialPlaylistId != null) {
-                musicLibrary.playlists.find { it.id == initialPlaylistId }
-            } else {
-                null
-            }
-        )
+    
+    // Simplified playlist selection state
+    var selectedPlaylistId by remember { mutableStateOf(initialPlaylistId) }
+    
+    // Derive the selected playlist from the ID
+    val selectedPlaylist = if (selectedPlaylistId != null) {
+        musicLibrary.playlists.find { it.id == selectedPlaylistId }
+    } else {
+        null
     }
     
-    // If we have an initialPlaylistId, notify the parent component
+    // If we have an initialPlaylistId and a valid playlist, notify the parent component
     LaunchedEffect(Unit) {
         if (initialPlaylistId != null && selectedPlaylist != null) {
-            onPlaylistSelected(selectedPlaylist!!)
-            println("DEBUG: Restored playlist ${selectedPlaylist!!.name} from saved state")
+            onPlaylistSelected(selectedPlaylist)
+            println("DEBUG: Restored playlist ${selectedPlaylist.name} from saved state")
         }
     }
     
-    // Handle back button press
+    // Simple function to go back to the playlists list
+    fun goBackToPlaylistsList() {
+        selectedPlaylistId = null
+        musicLibrary.saveLastPlaylistId(null)
+        println("DEBUG: Navigated back to playlists list")
+    }
+    
+    // Handle back button press when viewing a playlist's songs
     BackHandler(enabled = selectedPlaylist != null) {
-        // Safely set selectedPlaylist to null
-        try {
-            selectedPlaylist = null
-        } catch (e: Exception) {
-            // Log the error but don't crash
-            println("Error handling back navigation: ${e.message}")
-        }
+        goBackToPlaylistsList()
     }
     
     if (showCreatePlaylistDialog) {
@@ -258,9 +259,13 @@ fun PlaylistsScreen(
                             name = playlist.name,
                             songCount = playlist.songs.size,
                             onClick = { 
-                                selectedPlaylist = playlist
+                                // Update the selected playlist ID
+                                selectedPlaylistId = playlist.id
+                                // Save the selected playlist ID to preferences
+                                musicLibrary.saveLastPlaylistId(playlist.id)
                                 // Also notify the parent component
                                 onPlaylistSelected(playlist)
+                                println("DEBUG: Selected playlist ${playlist.name} with ID ${playlist.id}")
                             },
                             onRenameClick = { /* Will implement rename later */ },
                             onDeleteClick = { /* Will implement delete later */ }
@@ -281,12 +286,9 @@ fun PlaylistsScreen(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = { 
-                        try {
-                            selectedPlaylist = null 
-                        } catch (e: Exception) {
-                            // Log the error but don't crash
-                            println("Error handling back button click: ${e.message}")
-                        }
+                        println("DEBUG: Back button clicked in UI, returning to playlists list")
+                        // Use the helper function to go back to playlists list
+                        goBackToPlaylistsList()
                     }) {
                         Icon(
                             imageVector = Icons.Default.ArrowBack,

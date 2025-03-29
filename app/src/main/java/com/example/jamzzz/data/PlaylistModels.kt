@@ -51,6 +51,19 @@ class MusicLibrary(private val context: Context) {
         return _favorites.contains(musicFile.uri.toString())
     }
     
+    // Save the last selected playlist ID to SharedPreferences
+    fun saveLastPlaylistId(playlistId: String?) {
+        val prefs = context.getSharedPreferences("JamzzzPlayerPrefs", Context.MODE_PRIVATE)
+        val editor = prefs.edit()
+        if (playlistId != null) {
+            editor.putString("lastPlaylistId", playlistId)
+        } else {
+            editor.remove("lastPlaylistId")
+        }
+        editor.apply()
+        println("DEBUG: Saved last playlist ID: $playlistId")
+    }
+    
     // Create a new playlist
     fun createPlaylist(name: String): Playlist {
         val id = System.currentTimeMillis().toString()
