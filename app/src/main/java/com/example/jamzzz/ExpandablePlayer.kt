@@ -5,7 +5,14 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.Image
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.animation.core.*
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.graphics.graphicsLayer
+import kotlin.random.Random
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
@@ -36,6 +43,14 @@ import kotlinx.coroutines.launch
  * An expandable player that can be swiped up to show full player controls
  * and swiped down to minimize back to a mini player.
  */
+// Define the visual effect types
+enum class VisualEffectType {
+    NONE,
+    ROTATION,
+    PULSE,
+    VISUALIZER
+}
+
 @Composable
 fun ExpandablePlayer(
     selectedTrack: MusicFile?,
@@ -52,6 +67,9 @@ fun ExpandablePlayer(
     // State for tracking expansion
     var expanded by remember { mutableStateOf(false) }
     val expansionTransition = updateTransition(targetState = expanded, label = "ExpansionTransition")
+    
+    // State for visual effect type
+    var visualEffectType by remember { mutableStateOf(VisualEffectType.NONE) }
     
     // Animation values
     val miniPlayerHeight = 120.dp // Increased height for mini player
@@ -180,10 +198,11 @@ fun ExpandablePlayer(
                             .background(MaterialTheme.colors.primary.copy(alpha = 0.2f), shape = RoundedCornerShape(4.dp)),
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(
-                            imageVector = Icons.Filled.MusicNote,
-                            contentDescription = null,
-                            tint = MaterialTheme.colors.primary
+                        Image(
+                            painter = painterResource(id = R.drawable.jamzzz_icon_logo),
+                            contentDescription = "Jamzzz Logo",
+                            modifier = Modifier.size(40.dp),
+                            contentScale = ContentScale.Fit
                         )
                     }
                     
@@ -342,19 +361,143 @@ fun ExpandablePlayer(
                 
                 Spacer(modifier = Modifier.height(24.dp))
                 
-                // Album art placeholder (large)
+                // Album art placeholder (large) with visual effects
                 Box(
                     modifier = Modifier
                         .size(240.dp)
-                        .background(MaterialTheme.colors.primary.copy(alpha = 0.2f), shape = RoundedCornerShape(8.dp)),
+                        .background(MaterialTheme.colors.primary.copy(alpha = 0.2f), shape = RoundedCornerShape(8.dp))
+                        .clickable {
+                            // Cycle through visual effects on click
+                            visualEffectType = when (visualEffectType) {
+                                VisualEffectType.NONE -> VisualEffectType.ROTATION
+                                VisualEffectType.ROTATION -> VisualEffectType.PULSE
+                                VisualEffectType.PULSE -> VisualEffectType.VISUALIZER
+                                VisualEffectType.VISUALIZER -> VisualEffectType.NONE
+                            }
+                        },
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        imageVector = Icons.Filled.MusicNote,
-                        contentDescription = null,
-                        modifier = Modifier.size(80.dp),
-                        tint = MaterialTheme.colors.primary
-                    )
+                    // Apply different visual effects based on the selected type
+                    when (visualEffectType) {
+                        VisualEffectType.ROTATION -> {
+                            // Rotation effect
+                            val infiniteTransition = rememberInfiniteTransition()
+                            val rotation by infiniteTransition.animateFloat(
+                                initialValue = 0f,
+                                targetValue = 360f,
+                                animationSpec = infiniteRepeatable(
+                                    animation = tween(10000, easing = LinearEasing),
+                                    repeatMode = RepeatMode.Restart
+                                )
+                            )
+                            
+                            Image(
+                                painter = painterResource(id = R.drawable.jamzzz_icon_logo),
+                                contentDescription = "Jamzzz Logo",
+                                modifier = Modifier
+                                    .size(160.dp)
+                                    .graphicsLayer {
+                                        rotationZ = rotation
+                                    },
+                                contentScale = ContentScale.Fit
+                            )
+                        }
+                        VisualEffectType.PULSE -> {
+                            // Pulse effect - size pulsates with the beat
+                            val infiniteTransition = rememberInfiniteTransition()
+                            val scale by infiniteTransition.animateFloat(
+                                initialValue = 0.9f,
+                                targetValue = 1.1f,
+                                animationSpec = infiniteRepeatable(
+                                    animation = tween(600, easing = FastOutSlowInEasing),
+                                    repeatMode = RepeatMode.Reverse
+                                )
+                            )
+                            
+                            Image(
+                                painter = painterResource(id = R.drawable.jamzzz_icon_logo),
+                                contentDescription = "Jamzzz Logo",
+                                modifier = Modifier
+                                    .size(160.dp)
+                                    .graphicsLayer {
+                                        scaleX = if (isPlaying) scale else 1f
+                                        scaleY = if (isPlaying) scale else 1f
+                                    },
+                                contentScale = ContentScale.Fit
+                            )
+                        }
+                        VisualEffectType.VISUALIZER -> {
+                            // Visualizer effect - simulated audio visualization
+                            val infiniteTransition = rememberInfiniteTransition()
+                            val animatedValues = List(5) { index ->
+                                infiniteTransition.animateFloat(
+                                    initialValue = 0.8f,
+                                    targetValue = 1.2f,
+                                    animationSpec = infiniteRepeatable(
+                                        animation = tween(
+                                            durationMillis = 500 + Random.nextInt(500),
+                                            easing = FastOutSlowInEasing
+                                        ),
+                                        repeatMode = RepeatMode.Reverse
+                                    )
+                                )
+                            }
+                            
+                            val rotation by infiniteTransition.animateFloat(
+                                initialValue = -5f,
+                                targetValue = 5f,
+                                animationSpec = infiniteRepeatable(
+                                    animation = tween(2000, easing = FastOutSlowInEasing),
+                                    repeatMode = RepeatMode.Reverse
+                                )
+                            )
+                            
+                            // Get animated values
+                            val scales = animatedValues.map { it.value }
+                            val avgScale = scales.average().toFloat()
+                            
+                            Image(
+                                painter = painterResource(id = R.drawable.jamzzz_icon_logo),
+                                contentDescription = "Jamzzz Logo",
+                                modifier = Modifier
+                                    .size(160.dp)
+                                    .graphicsLayer {
+                                        if (isPlaying) {
+                                            scaleX = avgScale
+                                            scaleY = avgScale
+                                            rotationZ = rotation
+                                        }
+                                    },
+                                contentScale = ContentScale.Fit
+                            )
+                        }
+                        else -> {
+                            // No effect
+                            Image(
+                                painter = painterResource(id = R.drawable.jamzzz_icon_logo),
+                                contentDescription = "Jamzzz Logo",
+                                modifier = Modifier.size(160.dp),
+                                contentScale = ContentScale.Fit
+                            )
+                        }
+                    }
+                    
+                    // Display a small indicator of the current effect mode
+                    if (visualEffectType != VisualEffectType.NONE) {
+                        Text(
+                            text = when(visualEffectType) {
+                                VisualEffectType.ROTATION -> "Rotation"
+                                VisualEffectType.PULSE -> "Pulse"
+                                VisualEffectType.VISUALIZER -> "Visualizer"
+                                else -> ""
+                            },
+                            style = MaterialTheme.typography.caption,
+                            color = MaterialTheme.colors.primary.copy(alpha = 0.7f),
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .padding(bottom = 8.dp)
+                        )
+                    }
                 }
                 
                 Spacer(modifier = Modifier.height(32.dp))

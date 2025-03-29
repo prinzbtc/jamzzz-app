@@ -81,4 +81,4 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ---
 
-Made with ❤️ by [prinzbtc](https://github.com/prinzbtc)
+Made with ❤️ by [prinzbtc](https://github.com/prinzbtc) aka MattyOnChain (www.x.com/mattyonchain)
