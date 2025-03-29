@@ -3,6 +3,7 @@ package com.example.jamzzz
 import android.content.Context
 import android.content.SharedPreferences
 import android.media.audiofx.Equalizer
+import android.util.Log
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -65,9 +66,15 @@ class EqualizerActivity : ComponentActivity() {
                 equalizer = Equalizer(1000, audioSessionId).apply {
                     enabled = true
                 }
+                // Log successful initialization
+                Log.d("EqualizerActivity", "Equalizer initialized with session ID: $audioSessionId")
             } catch (e: Exception) {
+                Log.e("EqualizerActivity", "Error initializing equalizer: ${e.message}")
                 Toast.makeText(this, "Could not initialize equalizer: ${e.message}", Toast.LENGTH_SHORT).show()
             }
+        } else {
+            Log.e("EqualizerActivity", "Invalid audio session ID: $audioSessionId")
+            Toast.makeText(this, "Invalid audio session ID", Toast.LENGTH_SHORT).show()
         }
         
         // Get saved preset from SharedPreferences
@@ -196,6 +203,7 @@ fun EqualizerScreen(
     // Function to apply preset
     fun applyPreset(preset: String) {
         selectedPreset = preset
+        Log.d("EqualizerActivity", "Applying preset: $preset")
         
         // Notify the activity about the preset change
         if (preset == "Custom") {
@@ -214,6 +222,7 @@ fun EqualizerScreen(
                     if (presetIndex >= 0 && presetIndex < equalizer.numberOfPresets) {
                         // Apply the preset
                         equalizer.usePreset(presetIndex)
+                        Log.d("EqualizerActivity", "Applied preset index: $presetIndex")
                         
                         // Update slider values to reflect the new preset
                         sliderValues = List(bandCount) { band ->
@@ -221,15 +230,37 @@ fun EqualizerScreen(
                             (level - minLevel).toFloat() / levelRange
                         }
                         
+                        // Ensure equalizer is enabled
+                        if (!equalizer.enabled) {
+                            equalizer.enabled = true
+                            Log.d("EqualizerActivity", "Enabled equalizer")
+                        }
+                        
                         Toast.makeText(context, "Applied preset: $preset", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Log.e("EqualizerActivity", "Invalid preset index: $presetIndex, number of presets: ${equalizer.numberOfPresets}")
+                        Toast.makeText(context, "Invalid preset index", Toast.LENGTH_SHORT).show()
                     }
                 } else {
-                    // For custom, we keep the current slider values
+                    // For custom preset, apply the current slider values to each band
+                    sliderValues.forEachIndexed { index, value ->
+                        val actualLevel = (value * levelRange + minLevel).toInt().toShort()
+                        equalizer.setBandLevel(index.toShort(), actualLevel)
+                    }
+                    Log.d("EqualizerActivity", "Applied custom preset")
+                    
+                    // Ensure equalizer is enabled
+                    if (!equalizer.enabled) {
+                        equalizer.enabled = true
+                        Log.d("EqualizerActivity", "Enabled equalizer")
+                    }
                 }
             } catch (e: Exception) {
+                Log.e("EqualizerActivity", "Error applying preset: ${e.message}")
                 Toast.makeText(context, "Error applying preset: ${e.message}", Toast.LENGTH_SHORT).show()
             }
         } else {
+            Log.e("EqualizerActivity", "Equalizer is null, using fallback values")
             // Fallback behavior when equalizer is not available
             sliderValues = when (preset) {
                 "Classical" -> listOf(0.4f, 0.4f, 0.4f, 0.4f, 0.5f, 0.5f, 0.4f, 0.3f, 0.3f, 0.2f)
@@ -242,6 +273,7 @@ fun EqualizerScreen(
                 "Rock" -> listOf(1.0f, 0.9f, 0.8f, 0.5f, 0.4f, 0.4f, 0.5f, 0.8f, 0.9f, 0.9f)
                 else -> List(frequencies.size) { 0.5f } // Normal/flat
             }
+            Toast.makeText(context, "Equalizer not available. Using visual representation only.", Toast.LENGTH_SHORT).show()
         }
     }
     

@@ -2,6 +2,7 @@ package com.example.jamzzz
 
 import android.Manifest
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -65,10 +66,18 @@ class PlayerUI : ComponentActivity() {
             JamzzzTheme(darkTheme = true) {
                 MainApp(
                     exoPlayer = exoPlayer,
-                    initialTrackId = if (lastTrackId != -1L) lastTrackId else null
+                    initialTrackId = if (lastTrackId != -1L) lastTrackId else null,
+                    onOpenEqualizer = { openEqualizerActivity() }
                 )
             }
         }
+    }
+    
+    private fun openEqualizerActivity() {
+        val intent = Intent(this, EqualizerActivity::class.java).apply {
+            putExtra("audioSessionId", exoPlayer.audioSessionId)
+        }
+        startActivity(intent)
     }
     
     override fun onPause() {
@@ -85,7 +94,8 @@ class PlayerUI : ComponentActivity() {
 @Composable
 fun MainApp(
     exoPlayer: ExoPlayer,
-    initialTrackId: Long? = null
+    initialTrackId: Long? = null,
+    onOpenEqualizer: () -> Unit = {}
 ) {
     // Initialize MusicLibrary
     val context = LocalContext.current
@@ -323,8 +333,10 @@ fun MainApp(
                         }
                         
                         DropdownMenuItem(onClick = {
-                            // Open Equalizer activity
-                            val intent = android.content.Intent(context, EqualizerActivity::class.java)
+                            // Open Equalizer activity with the proper audio session ID
+                            val intent = Intent(context, EqualizerActivity::class.java).apply {
+                                putExtra("audioSessionId", exoPlayer.audioSessionId)
+                            }
                             context.startActivity(intent)
                             showMenu = false
                         }) {
@@ -418,7 +430,8 @@ fun MainApp(
                             exoPlayer.seekTo(position)
                         },
                         onPreviousClick = previousTrackAction,
-                        onNextClick = nextTrackAction
+                        onNextClick = nextTrackAction,
+                        onOpenEqualizer = onOpenEqualizer
                     )
                 }
             }

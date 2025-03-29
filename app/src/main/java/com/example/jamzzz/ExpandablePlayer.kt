@@ -46,7 +46,8 @@ fun ExpandablePlayer(
     onPlayPauseClick: () -> Unit,
     onSeekTo: (Long) -> Unit,
     onPreviousClick: () -> Unit,
-    onNextClick: () -> Unit
+    onNextClick: () -> Unit,
+    onOpenEqualizer: () -> Unit = {}
 ) {
     // State for tracking expansion
     var expanded by remember { mutableStateOf(false) }
@@ -474,6 +475,30 @@ fun ExpandablePlayer(
                             imageVector = Icons.Filled.SkipNext,
                             contentDescription = "Next",
                             modifier = Modifier.size(36.dp),
+                            tint = MaterialTheme.colors.primary
+                        )
+                    }
+                }
+                
+                // Equalizer button
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 16.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colors.surface.copy(alpha = 0.3f))
+                            .clickable { onOpenEqualizer() }
+                            .padding(8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Equalizer,
+                            contentDescription = "Equalizer",
                             tint = MaterialTheme.colors.primary
                         )
                     }
