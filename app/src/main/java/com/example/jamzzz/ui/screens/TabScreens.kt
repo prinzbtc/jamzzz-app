@@ -1,0 +1,475 @@
+package com.example.jamzzz.ui.screens
+
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.material.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.media3.exoplayer.ExoPlayer
+import com.example.jamzzz.MusicFile
+import com.example.jamzzz.data.MusicLibrary
+import com.example.jamzzz.data.Playlist
+import com.example.jamzzz.ui.components.EmptyState
+import com.example.jamzzz.ui.components.PlaylistItem
+import com.example.jamzzz.ui.theme.TextWhite
+import kotlinx.coroutines.launch
+import androidx.compose.ui.platform.LocalContext
+import android.widget.Toast
+
+// All Songs Tab
+@Composable
+fun AllSongsScreen(
+    musicFiles: List<MusicFile>,
+    selectedTrack: MusicFile?,
+    onTrackSelected: (MusicFile) -> Unit,
+    musicLibrary: MusicLibrary,
+    onBrowseMusic: () -> Unit
+) {
+    if (musicFiles.isEmpty()) {
+        EmptyState(
+            icon = Icons.Filled.MusicNote,
+            message = "No music files found",
+            actionText = "Browse Music",
+            onAction = onBrowseMusic
+        )
+    } else {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(bottom = 80.dp) // Add padding for player controls
+        ) {
+            items(musicFiles) { musicFile ->
+                MusicFileItem(
+                    musicFile = musicFile,
+                    isSelected = selectedTrack?.id == musicFile.id,
+                    isFavorite = musicLibrary.isFavorite(musicFile),
+                    onTrackSelected = { onTrackSelected(musicFile) },
+                    onToggleFavorite = {
+                        if (musicLibrary.isFavorite(musicFile)) {
+                            musicLibrary.removeFromFavorites(musicFile)
+                        } else {
+                            musicLibrary.addToFavorites(musicFile)
+                        }
+                    },
+                    onAddToPlaylist = { 
+                        // Check if there are existing playlists
+                        if (musicLibrary.playlists.isEmpty()) {
+                            // No playlists exist, show dialog to create a new one
+                            true // We'll handle this in the MusicFileItem composable
+                        } else {
+                            // Show dialog with list of existing playlists
+                            false // We'll handle this in the MusicFileItem composable
+                        }
+                    },
+                    musicLibrary = musicLibrary
+                )
+            }
+        }
+    }
+}
+
+// Favorites Tab
+@Composable
+fun FavoritesScreen(
+    musicFiles: List<MusicFile>,
+    selectedTrack: MusicFile?,
+    onTrackSelected: (MusicFile) -> Unit,
+    musicLibrary: MusicLibrary
+) {
+    val favoriteFiles = remember(musicFiles, musicLibrary.favorites) {
+        musicFiles.filter { musicFile -> 
+            musicLibrary.isFavorite(musicFile)
+        }
+    }
+    
+    if (favoriteFiles.isEmpty()) {
+        EmptyState(
+            icon = Icons.Filled.Favorite,
+            message = "No favorite songs yet",
+            actionText = "Browse Music",
+            onAction = null // Will be connected to the tab change later
+        )
+    } else {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(bottom = 80.dp) // Add padding for player controls
+        ) {
+            items(favoriteFiles) { musicFile ->
+                MusicFileItem(
+                    musicFile = musicFile,
+                    isSelected = selectedTrack?.id == musicFile.id,
+                    isFavorite = true, // Always true in favorites tab
+                    onTrackSelected = { onTrackSelected(musicFile) },
+                    onToggleFavorite = {
+                        musicLibrary.removeFromFavorites(musicFile)
+                    },
+                    onAddToPlaylist = { 
+                        // Check if there are existing playlists
+                        if (musicLibrary.playlists.isEmpty()) {
+                            // No playlists exist, show dialog to create a new one
+                            true // We'll handle this in the MusicFileItem composable
+                        } else {
+                            // Show dialog with list of existing playlists
+                            false // We'll handle this in the MusicFileItem composable
+                        }
+                    },
+                    musicLibrary = musicLibrary
+                )
+            }
+        }
+    }
+}
+
+// Playlists Tab
+@Composable
+fun PlaylistsScreen(
+    musicLibrary: MusicLibrary,
+    onPlaylistSelected: (Playlist) -> Unit
+) {
+    val coroutineScope = rememberCoroutineScope()
+    var showCreatePlaylistDialog by remember { mutableStateOf(false) }
+    var newPlaylistName by remember { mutableStateOf("") }
+    
+    if (showCreatePlaylistDialog) {
+        AlertDialog(
+            onDismissRequest = { showCreatePlaylistDialog = false },
+            title = { Text("Create Playlist") },
+            text = {
+                TextField(
+                    value = newPlaylistName,
+                    onValueChange = { newPlaylistName = it },
+                    label = { Text("Playlist Name") },
+                    singleLine = true
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (newPlaylistName.isNotBlank()) {
+                            musicLibrary.createPlaylist(newPlaylistName)
+                            newPlaylistName = ""
+                            showCreatePlaylistDialog = false
+                        }
+                    }
+                ) {
+                    Text("Create")
+                }
+            },
+            dismissButton = {
+                Button(
+                    onClick = { showCreatePlaylistDialog = false }
+                ) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+    
+    if (musicLibrary.playlists.isEmpty()) {
+        EmptyState(
+            icon = Icons.Filled.QueueMusic,
+            message = "No playlists yet",
+            actionText = "Create Playlist",
+            onAction = { showCreatePlaylistDialog = true }
+        )
+    } else {
+        Column(modifier = Modifier.fillMaxSize()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Your Playlists",
+                    style = MaterialTheme.typography.h6,
+                    color = TextWhite
+                )
+                
+                IconButton(
+                    onClick = { showCreatePlaylistDialog = true }
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Add,
+                        contentDescription = "Create Playlist",
+                        tint = MaterialTheme.colors.primary
+                    )
+                }
+            }
+            
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                contentPadding = PaddingValues(bottom = 80.dp)
+            ) {
+                items(musicLibrary.playlists) { playlist ->
+                    PlaylistItem(
+                        name = playlist.name,
+                        songCount = playlist.songs.size,
+                        onClick = { onPlaylistSelected(playlist) },
+                        onMenuClick = { /* Will implement menu options later */ }
+                    )
+                }
+            }
+        }
+    }
+}
+
+// Show dialog to create a new playlist and add the song to it
+@Composable
+fun ShowCreatePlaylistDialog(musicFile: MusicFile, musicLibrary: MusicLibrary) {
+    val context = LocalContext.current
+    var showDialog by remember { mutableStateOf(true) }
+    var playlistName by remember { mutableStateOf("") }
+    
+    if (showDialog) {
+        AlertDialog(
+            onDismissRequest = { showDialog = false },
+            title = { Text("Create New Playlist") },
+            text = {
+                Column {
+                    Text("Enter a name for your new playlist:")
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = playlistName,
+                        onValueChange = { playlistName = it },
+                        label = { Text("Playlist Name") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (playlistName.isNotBlank()) {
+                            // Create new playlist and add song to it
+                            val newPlaylist = musicLibrary.createPlaylist(playlistName)
+                            musicLibrary.addToPlaylist(newPlaylist.id, musicFile)
+                            Toast.makeText(context, "Added to new playlist: ${playlistName}", Toast.LENGTH_SHORT).show()
+                            showDialog = false
+                        } else {
+                            Toast.makeText(context, "Please enter a playlist name", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                ) {
+                    Text("Create")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+}
+
+// Show dialog to select from existing playlists
+@Composable
+fun ShowSelectPlaylistDialog(musicFile: MusicFile, musicLibrary: MusicLibrary) {
+    val context = LocalContext.current
+    var showDialog by remember { mutableStateOf(true) }
+    var showCreateNewDialog by remember { mutableStateOf(false) }
+    
+    if (showDialog) {
+        AlertDialog(
+            onDismissRequest = { showDialog = false },
+            title = { Text("Add to Playlist") },
+            text = {
+                Column {
+                    LazyColumn(
+                        modifier = Modifier.heightIn(max = 300.dp)
+                    ) {
+                        val playlistNames = musicLibrary.playlists.map { it.name }
+                        items(playlistNames) { playlistName ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        // Find the playlist by name and add song to it
+                                        val selectedPlaylist = musicLibrary.playlists.find { it.name == playlistName }
+                                        if (selectedPlaylist != null) {
+                                            musicLibrary.addToPlaylist(selectedPlaylist.id, musicFile)
+                                            Toast.makeText(context, "Added to playlist: $playlistName", Toast.LENGTH_SHORT).show()
+                                        }
+                                        showDialog = false
+                                    }
+                                    .padding(vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.QueueMusic,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colors.secondary
+                                )
+                                Spacer(modifier = Modifier.width(16.dp))
+                                Text(
+                                    text = playlistName,
+                                    style = MaterialTheme.typography.body1
+                                )
+                            }
+                        }
+                    
+                        // Option to create a new playlist
+                        item {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        showDialog = false
+                                        showCreateNewDialog = true
+                                    }
+                                    .padding(vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Add,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colors.secondary
+                                )
+                                Spacer(modifier = Modifier.width(16.dp))
+                                Text(
+                                    text = "Create New Playlist",
+                                    style = MaterialTheme.typography.body1
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+    
+    // Show create new playlist dialog if requested
+    if (showCreateNewDialog) {
+        ShowCreatePlaylistDialog(musicFile, musicLibrary)
+    }
+}
+
+// Music File Item
+@Composable
+fun MusicFileItem(
+    musicFile: MusicFile,
+    isSelected: Boolean,
+    isFavorite: Boolean,
+    onTrackSelected: () -> Unit,
+    onToggleFavorite: () -> Unit,
+    onAddToPlaylist: () -> Boolean, // Return true if no playlists exist, false otherwise
+    musicLibrary: MusicLibrary
+) {
+    var showMenu by remember { mutableStateOf(false) }
+    var showCreatePlaylistDialog by remember { mutableStateOf(false) }
+    var showSelectPlaylistDialog by remember { mutableStateOf(false) }
+    
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 4.dp)
+            .clickable(onClick = onTrackSelected),
+        elevation = 2.dp,
+        backgroundColor = if (isSelected) 
+            MaterialTheme.colors.primary.copy(alpha = 0.3f) 
+            else MaterialTheme.colors.surface.copy(alpha = 0.9f)
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Filled.MusicNote,
+                contentDescription = "Music File",
+                tint = MaterialTheme.colors.secondary,
+                modifier = Modifier.size(32.dp)
+            )
+            
+            Spacer(modifier = Modifier.width(16.dp))
+            
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = musicFile.title ?: musicFile.uri.toString().substringAfterLast('/'),
+                    style = MaterialTheme.typography.body1,
+                    color = TextWhite,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                
+                musicFile.artist?.let {
+                    Text(
+                        text = it,
+                        style = MaterialTheme.typography.caption,
+                        color = TextWhite.copy(alpha = 0.7f)
+                    )
+                }
+            }
+            
+            IconButton(onClick = onToggleFavorite) {
+                Icon(
+                    imageVector = if (isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                    contentDescription = if (isFavorite) "Remove from Favorites" else "Add to Favorites",
+                    tint = if (isFavorite) MaterialTheme.colors.secondary else TextWhite.copy(alpha = 0.7f)
+                )
+            }
+            
+            IconButton(onClick = { showMenu = true }) {
+                Icon(
+                    imageVector = Icons.Filled.MoreVert,
+                    contentDescription = "More Options",
+                    tint = TextWhite.copy(alpha = 0.7f)
+                )
+            }
+            
+            DropdownMenu(
+                expanded = showMenu,
+                onDismissRequest = { showMenu = false }
+            ) {
+                DropdownMenuItem(onClick = {
+                    val noPlaylistsExist = onAddToPlaylist()
+                    showMenu = false
+                    
+                    // Handle playlist dialog based on whether playlists exist
+                    if (noPlaylistsExist) {
+                        showCreatePlaylistDialog = true
+                    } else {
+                        showSelectPlaylistDialog = true
+                    }
+                }) {
+                    Icon(
+                        imageVector = Icons.Filled.PlaylistAdd,
+                        contentDescription = "Add to Playlist"
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Add to Playlist")
+                }
+            }
+        }
+    }
+    
+    // Show appropriate dialog based on state
+    if (showCreatePlaylistDialog) {
+        ShowCreatePlaylistDialog(
+            musicFile = musicFile,
+            musicLibrary = musicLibrary
+        )
+    }
+    
+    if (showSelectPlaylistDialog) {
+        ShowSelectPlaylistDialog(
+            musicFile = musicFile,
+            musicLibrary = musicLibrary
+        )
+    }
+}

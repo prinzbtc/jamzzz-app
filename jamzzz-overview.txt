@@ -1,0 +1,24 @@
+### Jamzzz - Automatic Music Mixer Android App 
+
+## Project Summary
+
+Jamzzz is an innovative Android application that enhances the traditional music player experience by incorporating DJ-style mixing capabilities. Users can create playlists (such as R&B collections) and enjoy seamless transitions between tracks with various mixing styles. The app provides granular control over how songs blend together, allowing for a customized listening experience that mimics professional DJ sets without requiring technical expertise.
+
+## Core Features
+
+The application will function as a standard music player with added mixing capabilities including:
+
+- **Simple mix**: Basic crossfading between tracks
+- **Mash-up mix**: Blending elements from multiple tracks simultaneously
+- **Dynamic BPM mix**: Adjusting tempos to create smoother transitions
+- **Customizable parameters**: Mix duration, play duration, and start position controls
+- **Playlist management**: Creating and organizing music collections
+
+
+## Phase 2: AI DJ Functionality
+
+The second development phase will introduce an intelligent song sequencing system that applies professional DJ strategies to playlists. This AI DJ will analyze musical attributes to create the optimal flow—starting with mellower tracks, gradually building energy with more upbeat selections or tempo adjustments, and eventually winding down with calmer songs to close the session. This creates a curated listening journey similar to what an experienced DJ would craft at a party.
+
+## Technical Stack
+
+For development in Visual Studio Code, the recommended stack includes Kotlin as the primary language with Jetpack Compose for the UI layer. Audio processing will leverage the Android Media3 (ExoPlayer) library for playback alongside FFmpeg for mixing capabilities and beat detection. For local storage, Room Database will manage playlists and song metadata. The AI component can be implemented using TensorFlow Lite for on-device inference with a model trained on DJ set patterns. For development workflow in VSC, the "Extension Pack for Java" and "Kotlin Language" extensions will be essential, along with Gradle for building. Testing will require external Android emulator launching via command line or physical device connections, as VSC lacks the integrated preview capabilities of Android Studio.

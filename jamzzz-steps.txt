@@ -1,0 +1,14 @@
+JAMZZZ APP - Developing steps 
+
+Here's a suggested plan for the next steps in developing the Jamzzz app:
+
+1. Basic Audio Playback: Implement the basic audio playback functionality using the Android Media3 (ExoPlayer) library. This will allow the app to play music tracks.
+	- Add ExoPlayer Dependency: Ensure that the ExoPlayer library is included in the app/build.gradle file.
+	- Create a Simple Player UI: Design a basic user interface using Jetpack Compose for controlling playback (play, pause, stop).
+	- Initialize ExoPlayer: Set up an ExoPlayer instance in your app to handle audio playback.
+	- Load and Play Audio: Implement functionality to load and play audio files.
+	- Handle Playback Events: Manage playback events and update the UI accordingly.
+2. Mixing Capabilities: Integrate FFmpeg for mixing capabilities and beat detection. This will enable the app to perform crossfading, mash-up mixing, and dynamic BPM adjustments.
+3. Playlist Management: Set up the Room Database for managing playlists and song metadata. This will allow users to create and organize their music collections.
+4. UI Development: Design the user interface using Jetpack Compose. This includes creating screens for the music player, playlist management, and mixing controls.
+5. AI DJ Functionality: In the second phase, implement the AI DJ functionality using TensorFlow Lite. This will involve developing an intelligent song sequencing system.
