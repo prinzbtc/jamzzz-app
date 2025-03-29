@@ -10,6 +10,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -47,15 +48,12 @@ fun ExpandablePlayer(
     onPreviousClick: () -> Unit,
     onNextClick: () -> Unit
 ) {
-    val density = LocalDensity.current
-    val coroutineScope = rememberCoroutineScope()
-    
     // State for tracking expansion
     var expanded by remember { mutableStateOf(false) }
     val expansionTransition = updateTransition(targetState = expanded, label = "ExpansionTransition")
     
     // Animation values
-    val miniPlayerHeight = 72.dp
+    val miniPlayerHeight = 120.dp // Increased height for mini player
     var maxScreenHeight by remember { mutableStateOf(600.dp) }
     
     // Get the available height to fill the screen
@@ -65,6 +63,7 @@ fun ExpandablePlayer(
         }
     }
     
+    // Animation properties for player expansion
     val playerHeight by expansionTransition.animateDp(
         transitionSpec = { tween(durationMillis = 300, easing = FastOutSlowInEasing) },
         label = "PlayerHeight"
@@ -79,26 +78,25 @@ fun ExpandablePlayer(
         if (isExpanded) 16.dp else 0.dp
     }
     
+    // Alpha values for crossfade between mini and full player
     val miniPlayerAlpha by expansionTransition.animateFloat(
-        transitionSpec = { tween(durationMillis = 200) },
+        transitionSpec = { tween(durationMillis = 300) },
         label = "MiniPlayerAlpha"
     ) { isExpanded ->
         if (isExpanded) 0f else 1f
     }
     
     val fullPlayerAlpha by expansionTransition.animateFloat(
-        transitionSpec = { tween(durationMillis = 200) },
+        transitionSpec = { tween(durationMillis = 300) },
         label = "FullPlayerAlpha"
     ) { isExpanded ->
         if (isExpanded) 1f else 0f
     }
     
-
-    
     // Track total drag distance for determining final state
     var totalDragDistance by remember { mutableStateOf(0f) }
     
-    // Drag gesture to expand/collapse
+    // Main container for the player
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -130,16 +128,14 @@ fun ExpandablePlayer(
                         // Reset drag distance
                         totalDragDistance = 0f
                     },
-                    onVerticalDrag = { change: PointerInputChange, dragAmount: Float ->
+                    onVerticalDrag = { change, dragAmount ->
                         // Consume the position change to prevent parent scrolling
-                        val consumed = change.positionChange()
                         change.consume()
                         
                         // Accumulate total drag distance
                         totalDragDistance += dragAmount
                         
-                        // For immediate feedback, we can check if we've crossed a threshold
-                        // during the drag and update expanded state
+                        // For immediate feedback during the drag
                         if (dragAmount < -10 && !expanded && totalDragDistance < -50f) {
                             expanded = true
                         } else if (dragAmount > 10 && expanded && totalDragDistance > 50f) {
@@ -154,7 +150,6 @@ fun ExpandablePlayer(
             modifier = Modifier
                 .fillMaxSize()
                 .alpha(miniPlayerAlpha)
-                .clickable { expanded = true }
         ) {
             // Top separator line
             Box(
@@ -165,88 +160,163 @@ fun ExpandablePlayer(
                     .align(Alignment.TopCenter)
             )
             
-            Row(
+            Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(horizontal = 16.dp),
-                verticalAlignment = Alignment.CenterVertically
+                    .padding(horizontal = 16.dp)
             ) {
-                // Album art placeholder
-                Box(
-                    modifier = Modifier
-                        .size(48.dp)
-                        .background(MaterialTheme.colors.primary.copy(alpha = 0.2f), shape = RoundedCornerShape(4.dp)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.MusicNote,
-                        contentDescription = null,
-                        tint = MaterialTheme.colors.primary
-                    )
-                }
-                
-                // Track info
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(horizontal = 16.dp)
-                ) {
-                    Text(
-                        text = selectedTrack?.title ?: "No track selected",
-                        style = MaterialTheme.typography.body1,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = selectedTrack?.artist ?: "",
-                        style = MaterialTheme.typography.caption,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        color = TextWhite.copy(alpha = 0.7f)
-                    )
-                }
-                
-                // Player controls
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .clickable { expanded = true },
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconButton(onClick = onPreviousClick) {
+                    // Album art placeholder
+                    Box(
+                        modifier = Modifier
+                            .size(56.dp)
+                            .background(MaterialTheme.colors.primary.copy(alpha = 0.2f), shape = RoundedCornerShape(4.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
                         Icon(
-                            imageVector = Icons.Filled.SkipPrevious,
-                            contentDescription = "Previous",
+                            imageVector = Icons.Filled.MusicNote,
+                            contentDescription = null,
                             tint = MaterialTheme.colors.primary
                         )
                     }
                     
-                    IconButton(onClick = onPlayPauseClick) {
-                        Icon(
-                            imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                            contentDescription = if (isPlaying) "Pause" else "Play",
-                            tint = MaterialTheme.colors.primary
+                    // Track info
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(horizontal = 16.dp)
+                    ) {
+                        Text(
+                            text = selectedTrack?.title ?: "No track selected",
+                            style = MaterialTheme.typography.body1,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = selectedTrack?.artist ?: "",
+                            style = MaterialTheme.typography.caption,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            color = TextWhite.copy(alpha = 0.7f)
                         )
                     }
                     
-                    IconButton(onClick = onNextClick) {
-                        Icon(
-                            imageVector = Icons.Filled.SkipNext,
-                            contentDescription = "Next",
-                            tint = MaterialTheme.colors.primary
+                    // Player controls
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Previous button
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(Color.Transparent)
+                                .clickable { 
+                                    onPreviousClick()
+                                }
+                                .padding(4.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.SkipPrevious,
+                                contentDescription = "Previous",
+                                tint = MaterialTheme.colors.primary,
+                                modifier = Modifier.size(32.dp)
+                            )
+                        }
+                        
+                        // Play/Pause button
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(CircleShape)
+                                .background(Color.Transparent)
+                                .clickable { 
+                                    onPlayPauseClick()
+                                }
+                                .padding(4.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                                contentDescription = if (isPlaying) "Pause" else "Play",
+                                tint = MaterialTheme.colors.primary,
+                                modifier = Modifier.size(40.dp)
+                            )
+                        }
+                        
+                        // Next button
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(Color.Transparent)
+                                .clickable { 
+                                    onNextClick()
+                                }
+                                .padding(4.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.SkipNext,
+                                contentDescription = "Next",
+                                tint = MaterialTheme.colors.primary,
+                                modifier = Modifier.size(32.dp)
+                            )
+                        }
+                    }
+                }
+                
+                // Progress bar with timestamps
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                ) {
+                    // Progress bar
+                    Slider(
+                        value = if (duration > 0) currentPosition.toFloat() / duration.toFloat() else 0f,
+                        onValueChange = { newPosition ->
+                            onSeekTo((newPosition * duration).toLong())
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(20.dp),
+                        colors = SliderDefaults.colors(
+                            thumbColor = MaterialTheme.colors.primary,
+                            activeTrackColor = MaterialTheme.colors.primary,
+                            inactiveTrackColor = MaterialTheme.colors.primary.copy(alpha = 0.2f)
+                        )
+                    )
+                
+                    // Timestamps
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = formatPlayerDuration(currentPosition),
+                            style = MaterialTheme.typography.caption,
+                            color = TextWhite.copy(alpha = 0.7f),
+                            fontSize = 10.sp
+                        )
+                        Text(
+                            text = formatPlayerDuration(duration),
+                            style = MaterialTheme.typography.caption,
+                            color = TextWhite.copy(alpha = 0.7f),
+                            fontSize = 10.sp
                         )
                     }
                 }
             }
-            
-            // Progress bar at the bottom
-            LinearProgressIndicator(
-                progress = if (duration > 0) currentPosition.toFloat() / duration.toFloat() else 0f,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(2.dp)
-                    .align(Alignment.BottomCenter),
-                color = MaterialTheme.colors.primary,
-                backgroundColor = MaterialTheme.colors.primary.copy(alpha = 0.2f)
-            )
         }
         
         // Full player (visible when expanded)
@@ -267,10 +337,9 @@ fun ExpandablePlayer(
                         .width(40.dp)
                         .height(4.dp)
                         .background(Color.Gray.copy(alpha = 0.5f), RoundedCornerShape(2.dp))
-                        .padding(bottom = 16.dp)
                 )
                 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(24.dp))
                 
                 // Album art placeholder (large)
                 Box(
@@ -305,7 +374,7 @@ fun ExpandablePlayer(
                     color = TextWhite.copy(alpha = 0.7f)
                 )
                 
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(32.dp))
                 
                 // Seek bar
                 Slider(
@@ -330,13 +399,13 @@ fun ExpandablePlayer(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
-                        text = com.example.jamzzz.formatDuration(currentPosition),
-                        style = MaterialTheme.typography.caption,
+                        text = formatPlayerDuration(currentPosition),
+                        style = MaterialTheme.typography.body2,
                         color = TextWhite.copy(alpha = 0.7f)
                     )
                     Text(
-                        text = com.example.jamzzz.formatDuration(duration),
-                        style = MaterialTheme.typography.caption,
+                        text = formatPlayerDuration(duration),
+                        style = MaterialTheme.typography.body2,
                         color = TextWhite.copy(alpha = 0.7f)
                     )
                 }
@@ -349,34 +418,62 @@ fun ExpandablePlayer(
                     horizontalArrangement = Arrangement.SpaceEvenly,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconButton(onClick = onPreviousClick) {
+                    // Previous button
+                    Box(
+                        modifier = Modifier
+                            .size(56.dp)
+                            .clip(CircleShape)
+                            .background(Color.Transparent)
+                            .clickable { 
+                                onPreviousClick()
+                            }
+                            .padding(8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
                         Icon(
                             imageVector = Icons.Filled.SkipPrevious,
                             contentDescription = "Previous",
-                            modifier = Modifier.size(40.dp),
+                            modifier = Modifier.size(36.dp),
                             tint = MaterialTheme.colors.primary
                         )
                     }
                     
-                    IconButton(
-                        onClick = onPlayPauseClick,
+                    // Play/Pause button
+                    Box(
                         modifier = Modifier
-                            .size(64.dp)
-                            .background(MaterialTheme.colors.primary.copy(alpha = 0.2f), CircleShape)
+                            .size(72.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colors.primary.copy(alpha = 0.2f))
+                            .clickable { 
+                                onPlayPauseClick()
+                            }
+                            .padding(12.dp),
+                        contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
                             contentDescription = if (isPlaying) "Pause" else "Play",
-                            modifier = Modifier.size(40.dp),
+                            modifier = Modifier.size(48.dp),
                             tint = MaterialTheme.colors.primary
                         )
                     }
                     
-                    IconButton(onClick = onNextClick) {
+                    // Next button
+                    Box(
+                        modifier = Modifier
+                            .size(56.dp)
+                            .clip(CircleShape)
+                            .background(Color.Transparent)
+                            .clickable { 
+                                onNextClick()
+                            }
+                            .padding(8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
                         Icon(
                             imageVector = Icons.Filled.SkipNext,
                             contentDescription = "Next",
-                            modifier = Modifier.size(40.dp),
+                            modifier = Modifier.size(36.dp),
                             tint = MaterialTheme.colors.primary
                         )
                     }
@@ -386,4 +483,10 @@ fun ExpandablePlayer(
     }
 }
 
-// Using the formatDuration function from PlayerUI.kt
+// Helper function to format duration in mm:ss format
+private fun formatPlayerDuration(durationMs: Long): String {
+    val totalSeconds = durationMs / 1000
+    val minutes = totalSeconds / 60
+    val seconds = totalSeconds % 60
+    return String.format("%d:%02d", minutes, seconds)
+}

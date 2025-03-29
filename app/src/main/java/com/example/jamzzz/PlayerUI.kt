@@ -124,6 +124,12 @@ fun MainApp(
                     duration = player.duration.coerceAtLeast(0L)
                 }
             }
+            
+            override fun onPlaybackStateChanged(state: Int) {
+                if (state == Player.STATE_READY) {
+                    duration = exoPlayer.duration.coerceAtLeast(0L)
+                }
+            }
         }
         
         exoPlayer.addListener(listener)
@@ -156,6 +162,11 @@ fun MainApp(
                 val track = files.find { it.id == initialTrackId }
                 if (track != null) {
                     selectedTrack = track
+                    
+                    // Initialize ExoPlayer with the selected track
+                    exoPlayer.setMediaItem(MediaItem.fromUri(track.uri))
+                    exoPlayer.prepare()
+                    // Don't auto-play, let the user click play
                 }
             }
         } catch (e: Exception) {
@@ -352,56 +363,62 @@ fun MainApp(
                 // Player at the bottom with swipe-to-expand functionality
                 if (selectedTrack != null) {
                     // Use the ExpandablePlayer component
+                    val playPauseAction: () -> Unit = {
+                        if (isPlaying) {
+                            exoPlayer.pause()
+                        } else {
+                            exoPlayer.play()
+                        }
+                    }
+                    
+                    val previousTrackAction: () -> Unit = {
+                        // Find previous track in the list
+                        selectedTrack?.let { current ->
+                            val currentIndex = musicFiles.indexOfFirst { it.id == current.id }
+                            if (currentIndex > 0) {
+                                val prevTrack = musicFiles[currentIndex - 1]
+                                selectedTrack = prevTrack
+                                
+                                // Save track selection to preferences
+                                saveCurrentState()
+                                
+                                exoPlayer.setMediaItem(MediaItem.fromUri(prevTrack.uri))
+                                exoPlayer.prepare()
+                                exoPlayer.play()
+                            }
+                        }
+                    }
+                    
+                    val nextTrackAction: () -> Unit = {
+                        // Find next track in the list
+                        selectedTrack?.let { current ->
+                            val currentIndex = musicFiles.indexOfFirst { it.id == current.id }
+                            if (currentIndex < musicFiles.size - 1) {
+                                val nextTrack = musicFiles[currentIndex + 1]
+                                selectedTrack = nextTrack
+                                
+                                // Save track selection to preferences
+                                saveCurrentState()
+                                
+                                exoPlayer.setMediaItem(MediaItem.fromUri(nextTrack.uri))
+                                exoPlayer.prepare()
+                                exoPlayer.play()
+                            }
+                        }
+                    }
+                    
                     ExpandablePlayer(
                         selectedTrack = selectedTrack,
                         isPlaying = isPlaying,
                         currentPosition = currentPosition,
                         duration = duration,
                         exoPlayer = exoPlayer,
-                        onPlayPauseClick = {
-                            if (isPlaying) {
-                                exoPlayer.pause()
-                            } else {
-                                exoPlayer.play()
-                            }
-                        },
+                        onPlayPauseClick = playPauseAction,
                         onSeekTo = { position ->
                             exoPlayer.seekTo(position)
                         },
-                        onPreviousClick = {
-                            // Find previous track in the list
-                            selectedTrack?.let { current ->
-                                val currentIndex = musicFiles.indexOfFirst { it.id == current.id }
-                                if (currentIndex > 0) {
-                                    val prevTrack = musicFiles[currentIndex - 1]
-                                    selectedTrack = prevTrack
-                                    
-                                    // Save track selection to preferences
-                                    saveCurrentState()
-                                    
-                                    exoPlayer.setMediaItem(MediaItem.fromUri(prevTrack.uri))
-                                    exoPlayer.prepare()
-                                    exoPlayer.play()
-                                }
-                            }
-                        },
-                        onNextClick = {
-                            // Find next track in the list
-                            selectedTrack?.let { current ->
-                                val currentIndex = musicFiles.indexOfFirst { it.id == current.id }
-                                if (currentIndex < musicFiles.size - 1) {
-                                    val nextTrack = musicFiles[currentIndex + 1]
-                                    selectedTrack = nextTrack
-                                    
-                                    // Save track selection to preferences
-                                    saveCurrentState()
-                                    
-                                    exoPlayer.setMediaItem(MediaItem.fromUri(nextTrack.uri))
-                                    exoPlayer.prepare()
-                                    exoPlayer.play()
-                                }
-                            }
-                        }
+                        onPreviousClick = previousTrackAction,
+                        onNextClick = nextTrackAction
                     )
                 }
             }
