@@ -52,3 +52,6 @@ lint/tmp/
 assets/
 jamzzz-overview.txt
 jamzzz-steps.txt
+
+# Signing keys
+keystore.properties
