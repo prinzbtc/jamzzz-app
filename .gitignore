@@ -47,3 +47,8 @@ lint/tmp/
 
 # Java heap dumps
 *.hprof
+
+# Project documentation and assets
+assets/
+jamzzz-overview.txt
+jamzzz-steps.txt
