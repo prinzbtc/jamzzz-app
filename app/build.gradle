@@ -48,6 +48,13 @@ android {
             }
         }
     }
+    
+    // Custom APK filename
+    android.applicationVariants.all { variant ->
+        variant.outputs.all {
+            outputFileName = "jamzzz-${variant.buildType.name}-v${variant.versionName.replace(".", "")}.apk"
+        }
+    }
     composeOptions {
         kotlinCompilerExtensionVersion '1.4.0'
     }
