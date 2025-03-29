@@ -23,6 +23,7 @@ import com.example.jamzzz.ui.theme.TextWhite
 import kotlinx.coroutines.launch
 import androidx.compose.ui.platform.LocalContext
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 
 // All Songs Tab
 @Composable
@@ -131,11 +132,18 @@ fun FavoritesScreen(
 @Composable
 fun PlaylistsScreen(
     musicLibrary: MusicLibrary,
-    onPlaylistSelected: (Playlist) -> Unit
+    onPlaylistSelected: (Playlist) -> Unit,
+    onTrackSelected: (MusicFile, List<MusicFile>) -> Unit = { _, _ -> }
 ) {
     val coroutineScope = rememberCoroutineScope()
     var showCreatePlaylistDialog by remember { mutableStateOf(false) }
     var newPlaylistName by remember { mutableStateOf("") }
+    var selectedPlaylist by remember { mutableStateOf<Playlist?>(null) }
+    
+    // Handle back button press
+    BackHandler(enabled = selectedPlaylist != null) {
+        selectedPlaylist = null
+    }
     
     if (showCreatePlaylistDialog) {
         AlertDialog(
@@ -172,14 +180,63 @@ fun PlaylistsScreen(
         )
     }
     
-    if (musicLibrary.playlists.isEmpty()) {
-        EmptyState(
-            icon = Icons.Filled.QueueMusic,
-            message = "No playlists yet",
-            actionText = "Create Playlist",
-            onAction = { showCreatePlaylistDialog = true }
-        )
+    if (selectedPlaylist == null) {
+        // Show playlists list
+        if (musicLibrary.playlists.isEmpty()) {
+            EmptyState(
+                icon = Icons.Filled.QueueMusic,
+                message = "No playlists yet",
+                actionText = "Create Playlist",
+                onAction = { showCreatePlaylistDialog = true }
+            )
+        } else {
+            Column(modifier = Modifier.fillMaxSize()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Your Playlists",
+                        style = MaterialTheme.typography.h6,
+                        color = TextWhite
+                    )
+                    
+                    IconButton(
+                        onClick = { showCreatePlaylistDialog = true }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Add,
+                            contentDescription = "Create Playlist",
+                            tint = MaterialTheme.colors.primary
+                        )
+                    }
+                }
+                
+                LazyColumn(
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(bottom = 80.dp)
+                ) {
+                    items(musicLibrary.playlists) { playlist ->
+                        PlaylistItem(
+                            name = playlist.name,
+                            songCount = playlist.songs.size,
+                            onClick = { 
+                                selectedPlaylist = playlist
+                                // Also notify the parent component
+                                onPlaylistSelected(playlist)
+                            },
+                            onRenameClick = { /* Will implement rename later */ },
+                            onDeleteClick = { /* Will implement delete later */ }
+                        )
+                    }
+                }
+            }
+        }
     } else {
+        // Show selected playlist songs
         Column(modifier = Modifier.fillMaxSize()) {
             Row(
                 modifier = Modifier
@@ -188,34 +245,87 @@ fun PlaylistsScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = "Your Playlists",
-                    style = MaterialTheme.typography.h6,
-                    color = TextWhite
-                )
-                
-                IconButton(
-                    onClick = { showCreatePlaylistDialog = true }
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.Add,
-                        contentDescription = "Create Playlist",
-                        tint = MaterialTheme.colors.primary
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = { selectedPlaylist = null }) {
+                        Icon(
+                            imageVector = Icons.Default.ArrowBack,
+                            contentDescription = "Back to Playlists",
+                            tint = MaterialTheme.colors.primary
+                        )
+                    }
+                    Text(
+                        text = selectedPlaylist!!.name,
+                        style = MaterialTheme.typography.h6,
+                        color = TextWhite
                     )
+                }
+                
+                if (selectedPlaylist!!.songs.isNotEmpty()) {
+                    IconButton(onClick = {
+                        // Find the first song in the playlist from all music files
+                        val allMusicFiles = musicLibrary.getAllMusicFiles()
+                        val firstSongUri = selectedPlaylist!!.songs.first()
+                        val firstSong = allMusicFiles.find { it.uri.toString() == firstSongUri }
+                        
+                        // Convert playlist song URIs to MusicFile objects
+                        val playlistMusicFiles = selectedPlaylist!!.songs.mapNotNull { songUri ->
+                            allMusicFiles.find { it.uri.toString() == songUri }
+                        }
+                        
+                        // Play the first song if found
+                        if (firstSong != null && playlistMusicFiles.isNotEmpty()) {
+                            onTrackSelected(firstSong, playlistMusicFiles)
+                        }
+                    }) {
+                        Icon(
+                            imageVector = Icons.Default.PlayArrow,
+                            contentDescription = "Play All",
+                            tint = MaterialTheme.colors.primary
+                        )
+                    }
                 }
             }
             
-            LazyColumn(
-                modifier = Modifier.weight(1f),
-                contentPadding = PaddingValues(bottom = 80.dp)
-            ) {
-                items(musicLibrary.playlists) { playlist ->
-                    PlaylistItem(
-                        name = playlist.name,
-                        songCount = playlist.songs.size,
-                        onClick = { onPlaylistSelected(playlist) },
-                        onMenuClick = { /* Will implement menu options later */ }
+            if (selectedPlaylist!!.songs.isEmpty()) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "No songs in this playlist",
+                        color = TextWhite
                     )
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(bottom = 80.dp)
+                ) {
+                    // Get all music files to find the ones in this playlist
+                    val allMusicFiles = musicLibrary.getAllMusicFiles()
+                    
+                    // Convert song URIs to MusicFile objects
+                    val playlistMusicFiles = selectedPlaylist!!.songs.mapNotNull { songUri ->
+                        allMusicFiles.find { it.uri.toString() == songUri }
+                    }
+                    
+                    items(playlistMusicFiles) { musicFile ->
+                        MusicFileItem(
+                            musicFile = musicFile,
+                            isSelected = false,
+                            isFavorite = musicLibrary.isFavorite(musicFile),
+                            onTrackSelected = { onTrackSelected(musicFile, playlistMusicFiles) },
+                            onToggleFavorite = {
+                                if (musicLibrary.isFavorite(musicFile)) {
+                                    musicLibrary.removeFromFavorites(musicFile)
+                                } else {
+                                    musicLibrary.addToFavorites(musicFile)
+                                }
+                            },
+                            onAddToPlaylist = { false },
+                            musicLibrary = musicLibrary
+                        )
+                    }
                 }
             }
         }

@@ -122,6 +122,28 @@ fun MainApp(
         editor.apply()
     }
     
+    // Function to queue songs from a playlist
+    fun queueSongsFromPlaylist(selectedTrack: MusicFile, playlistSongs: List<MusicFile>) {
+        // Clear the current playlist
+        exoPlayer.clearMediaItems()
+        
+        // Add all songs from the playlist to the queue
+        playlistSongs.forEach { song ->
+            exoPlayer.addMediaItem(MediaItem.fromUri(song.uri))
+        }
+        
+        // Find the index of the selected track in the playlist
+        val selectedIndex = playlistSongs.indexOf(selectedTrack)
+        if (selectedIndex != -1) {
+            // Seek to the selected track
+            exoPlayer.seekTo(selectedIndex, 0)
+        }
+        
+        // Prepare and play
+        exoPlayer.prepare()
+        exoPlayer.play()
+    }
+    
     // Set up ExoPlayer listener
     DisposableEffect(exoPlayer) {
         val listener = object : Player.Listener {
@@ -166,6 +188,9 @@ fun MainApp(
         try {
             val files = com.example.jamzzz.loadAllMusicFilesFromDevice(context, exoPlayer, initialTrackId)
             musicFiles = files
+            
+            // Set the music files in the MusicLibrary for later use
+            musicLibrary.setAllMusicFiles(files)
             
             // If we have an initialTrackId, try to select that track
             if (initialTrackId != null) {
@@ -237,10 +262,8 @@ fun MainApp(
                         // Save track selection to preferences
                         saveCurrentState()
                         
-                        // Play the selected track
-                        exoPlayer.setMediaItem(MediaItem.fromUri(track.uri))
-                        exoPlayer.prepare()
-                        exoPlayer.play()
+                        // Queue all songs from All Songs tab
+                        queueSongsFromPlaylist(track, musicFiles)
                     }
                 )
             }
@@ -259,10 +282,13 @@ fun MainApp(
                         // Save track selection to preferences
                         saveCurrentState()
                         
-                        // Play the selected track
-                        exoPlayer.setMediaItem(MediaItem.fromUri(track.uri))
-                        exoPlayer.prepare()
-                        exoPlayer.play()
+                        // Queue all favorite songs
+                        // Convert favorite URIs to MusicFile objects
+                        val allFiles = musicLibrary.getAllMusicFiles()
+                        val favoriteMusicFiles = musicLibrary.favorites.mapNotNull { favoriteUri ->
+                            allFiles.find { it.uri.toString() == favoriteUri }
+                        }
+                        queueSongsFromPlaylist(track, favoriteMusicFiles)
                     }
                 )
             }
@@ -274,9 +300,17 @@ fun MainApp(
                 PlaylistsScreen(
                     musicLibrary = musicLibrary,
                     onPlaylistSelected = { playlist ->
-                        // Handle playlist selection - will be implemented later
-                        // For now, just save current state
+                        // Just save current state when playlist is selected
                         saveCurrentState()
+                    },
+                    onTrackSelected = { track, playlistSongs ->
+                        selectedTrack = track
+                        
+                        // Save track selection to preferences
+                        saveCurrentState()
+                        
+                        // Queue all songs from this playlist
+                        queueSongsFromPlaylist(track, playlistSongs)
                     }
                 )
             }

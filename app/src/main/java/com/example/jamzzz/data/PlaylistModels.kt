@@ -102,6 +102,19 @@ class MusicLibrary(private val context: Context) {
         }
     }
     
+    // Get all music files from the device
+    // This is a placeholder method that should be implemented to return all music files
+    // For now, it will be used by the UI to convert URI strings to MusicFile objects
+    private var _allMusicFiles: List<MusicFile> = emptyList()
+    
+    fun setAllMusicFiles(musicFiles: List<MusicFile>) {
+        _allMusicFiles = musicFiles
+    }
+    
+    fun getAllMusicFiles(): List<MusicFile> {
+        return _allMusicFiles
+    }
+    
     // Save favorites to SharedPreferences
     private fun saveFavorites() {
         val prefs = context.getSharedPreferences("jamzzz_preferences", Context.MODE_PRIVATE)
