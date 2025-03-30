@@ -1,11 +1,15 @@
 package com.example.jamzzz
 
 import android.Manifest
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.ServiceConnection
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.os.IBinder
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -34,6 +38,7 @@ import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import com.example.jamzzz.data.MusicLibrary
 import com.example.jamzzz.EqualizerActivity
+import com.example.jamzzz.service.MusicService
 import com.example.jamzzz.ui.components.TabItem
 import com.example.jamzzz.ui.components.TabbedScreen
 import com.example.jamzzz.ui.screens.AllSongsScreen
@@ -49,6 +54,26 @@ import java.io.File
 
 class PlayerUI : ComponentActivity() {
     private lateinit var exoPlayer: ExoPlayer
+    private var musicService: MusicService? = null
+    private var serviceBound = false
+    private var currentTrack: MusicFile? = null
+    
+    // Service connection for binding to the MusicService
+    private val serviceConnection = object : ServiceConnection {
+        override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
+            val binder = service as MusicService.MusicBinder
+            musicService = binder.getService()
+            serviceBound = true
+            
+            // Set the ExoPlayer instance to the service
+            musicService?.setPlayer(exoPlayer)
+        }
+        
+        override fun onServiceDisconnected(name: ComponentName?) {
+            musicService = null
+            serviceBound = false
+        }
+    }
     private val PREFS_NAME = "JamzzzPlayerPrefs"
     private val KEY_LAST_TRACK_ID = "lastTrackId"
     private val KEY_LAST_TAB_INDEX = "lastTabIndex"
@@ -58,8 +83,30 @@ class PlayerUI : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
+        // Handle back button press to minimize app instead of closing it
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                // Minimize the app instead of closing it
+                moveTaskToBack(true)
+            }
+        })
+        
         // Initialize ExoPlayer
         exoPlayer = ExoPlayer.Builder(this).build()
+        exoPlayer.prepare()
+        
+        // Set up a listener to start the service when playback begins
+        exoPlayer.addListener(object : Player.Listener {
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                if (isPlaying) {
+                    startMusicService()
+                }
+            }
+        })
+        
+        // Bind to the music service (don't start it yet - we'll start it when playback begins)
+        val serviceIntent = Intent(this, MusicService::class.java)
+        bindService(serviceIntent, serviceConnection, Context.BIND_AUTO_CREATE)
         
         // Get saved state from SharedPreferences
         val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -76,7 +123,12 @@ class PlayerUI : ComponentActivity() {
                     initialTabIndex = lastTabIndex,
                     initialQueueSource = lastQueueSource,
                     initialPlaylistId = lastPlaylistId,
-                    onOpenEqualizer = { openEqualizerActivity() }
+                    onOpenEqualizer = { openEqualizerActivity() },
+                    musicService = musicService,
+                    onTrackChanged = { track -> 
+                        // Update the activity's currentTrack property
+                        currentTrack = track
+                    }
                 )
             }
         }
@@ -91,12 +143,40 @@ class PlayerUI : ComponentActivity() {
     
     override fun onPause() {
         super.onPause()
-        // ExoPlayer will continue playing in the background
+        // ExoPlayer will continue playing in the background via the service
     }
     
     override fun onDestroy() {
         super.onDestroy()
-        exoPlayer.release()
+        // Unbind from the service
+        if (serviceBound) {
+            unbindService(serviceConnection)
+            serviceBound = false
+        }
+        // Note: We don't release the ExoPlayer here as the service is handling it
+    }
+    
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        // Set this new intent as the activity's intent
+        setIntent(intent)
+        println("DEBUG: PlayerUI received new intent")
+        
+        // If we're already bound to the music service, update it with the current track info
+        musicService?.let { service ->
+            currentTrack?.let { track ->
+                service.updateTrackInfo(
+                    title = track.title ?: "Unknown",
+                    artist = track.artist ?: "Unknown"
+                )
+            }
+        }
+    }
+    
+    // Start the music service as a foreground service
+    private fun startMusicService() {
+        val serviceIntent = Intent(this, MusicService::class.java)
+        ContextCompat.startForegroundService(this, serviceIntent)
     }
 }
 
@@ -107,7 +187,9 @@ fun MainApp(
     initialTabIndex: Int = 0,
     initialQueueSource: String = "AllSongs",
     initialPlaylistId: String? = null,
-    onOpenEqualizer: () -> Unit = {}
+    onOpenEqualizer: () -> Unit = {},
+    musicService: MusicService? = null,
+    onTrackChanged: (MusicFile?) -> Unit = {}
 ) {
     // Initialize MusicLibrary
     val context = LocalContext.current
@@ -116,6 +198,11 @@ fun MainApp(
     var selectedTrack by remember { mutableStateOf<MusicFile?>(null) }
     var isLoading by remember { mutableStateOf(false) }
     var isPlaying by remember { mutableStateOf(false) }
+    
+    // Call the onTrackChanged callback whenever selectedTrack changes
+    LaunchedEffect(selectedTrack) {
+        onTrackChanged(selectedTrack)
+    }
     var currentPosition by remember { mutableStateOf(0L) }
     var duration by remember { mutableStateOf(0L) }
     var permissionGranted by remember { mutableStateOf(false) }
@@ -201,6 +288,9 @@ fun MainApp(
         
         // Prepare and play
         exoPlayer.prepare()
+        
+        // The service will be started by the activity when playback begins
+        
         exoPlayer.play()
         
         // Verify the queue is set up correctly
@@ -267,6 +357,18 @@ fun MainApp(
         }
     }
     
+    // Function to update the music service with the current track information
+    fun updateMusicService(track: MusicFile?) {
+        track?.let {
+            // Update the music service with the track information
+            musicService?.updateTrackInfo(
+                title = it.title ?: "Unknown",
+                artist = it.artist ?: "Unknown"
+            )
+            println("DEBUG: Updated music service with track: ${it.title} by ${it.artist}")
+        }
+    }
+    
     // Function to load music files from the device
     suspend fun loadAllMusic() {
         isLoading = true
@@ -286,6 +388,8 @@ fun MainApp(
                     // Initialize ExoPlayer with the selected track
                     exoPlayer.setMediaItem(MediaItem.fromUri(track.uri))
                     exoPlayer.prepare()
+                    // Update the music service with the track information
+                    updateMusicService(track)
                     // Don't auto-play, let the user click play
                 }
             }
@@ -353,6 +457,9 @@ fun MainApp(
                         // Save track selection and tab to preferences
                         saveCurrentState(tabIndex = currentTabIndex)
                         
+                        // Update the music service with track information
+                        updateMusicService(track)
+                        
                         // Store all songs for proper queue navigation
                         val allSongs = ArrayList(musicFiles)
                         
@@ -381,6 +488,9 @@ fun MainApp(
                         
                         // Save track selection and tab to preferences
                         saveCurrentState(tabIndex = currentTabIndex)
+                        
+                        // Update the music service with track information
+                        updateMusicService(track)
                         
                         // Queue all favorite songs
                         // Convert favorite URIs to MusicFile objects
@@ -454,6 +564,9 @@ fun MainApp(
                         
                         // Save track selection and playlist to preferences
                         saveCurrentState(tabIndex = currentTabIndex)
+                        
+                        // Update the music service with track information
+                        updateMusicService(track)
                         
                         // Store the current playlist songs for proper queue navigation
                         val currentPlaylistSongs = ArrayList(playlistSongs)
@@ -596,6 +709,8 @@ fun MainApp(
                                         musicLibrary.setCurrentlyPlayingTrack(track)
                                         // Save track selection to preferences
                                         saveCurrentState()
+                                        // Update the music service with track information
+                                        updateMusicService(track)
                                         println("DEBUG: Moved to previous track: ${track.title}")
                                     }
                                 }
@@ -624,6 +739,8 @@ fun MainApp(
                                         musicLibrary.setCurrentlyPlayingTrack(track)
                                         // Save track selection to preferences
                                         saveCurrentState()
+                                        // Update the music service with track information
+                                        updateMusicService(track)
                                         println("DEBUG: Moved to next track: ${track.title}")
                                     }
                                 }

@@ -35,7 +35,14 @@ class MainActivity : ComponentActivity() {
             JamzzzTheme(darkTheme = true) {
                 WelcomeScreen(onAnimationFinished = {
                     // Navigate to PlayerUI after animation completes
-                    val intent = Intent(this, PlayerUI::class.java)
+                    val intent = Intent(this, PlayerUI::class.java).apply {
+                        // These flags ensure we return to the existing activity instead of creating a new one
+                        flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or 
+                               Intent.FLAG_ACTIVITY_SINGLE_TOP or 
+                               Intent.FLAG_ACTIVITY_NEW_TASK
+                        // Add action to identify this intent
+                        action = "com.example.jamzzz.MAIN_ACTIVITY"
+                    }
                     startActivity(intent)
                     finish() // Close MainActivity so user can't go back to it
                 })
