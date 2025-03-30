@@ -39,6 +39,16 @@ Jamzzz is an innovative Android music player that transforms your listening expe
 
 ## 🔧 Installation
 
+### For Users
+1. Go to the [Releases](https://github.com/prinzbtc/jamzzz-app/releases) page of this repository
+2. Download the latest APK file to your Android device
+3. Enable "Install from unknown sources" in your Android settings
+   - On Android 8+: Settings → Apps → Special access → Install unknown apps
+   - Select your browser and toggle "Allow from this source"
+4. Open the downloaded APK file to install
+5. Enjoy Jamzzz!
+
+### For Developers
 1. Clone the repository
    ```bash
    git clone https://github.com/prinzbtc/jamzzz-app.git
