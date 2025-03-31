@@ -298,43 +298,65 @@ fun MainApp(
         println("DEBUG: ExoPlayer is now playing item at index ${exoPlayer.currentMediaItemIndex}")
     }
     
-    // Set up ExoPlayer listener
+    // Set up ExoPlayer listener with optimizations to prevent ANRs
     DisposableEffect(exoPlayer) {
+        // Track the last event processing time to prevent too frequent updates
+        var lastEventProcessingTime = 0L
+        val MIN_EVENT_PROCESSING_INTERVAL = 100L // Minimum time between event processing in ms
         val listener = object : Player.Listener {
             override fun onIsPlayingChanged(playing: Boolean) {
-                isPlaying = playing
+                try {
+                    isPlaying = playing
+                } catch (e: Exception) {
+                    println("ERROR: Exception in onIsPlayingChanged: ${e.message}")
+                }
             }
             
             override fun onEvents(player: Player, events: Player.Events) {
-                if (events.containsAny(Player.EVENT_POSITION_DISCONTINUITY, Player.EVENT_MEDIA_ITEM_TRANSITION)) {
-                    duration = player.duration.coerceAtLeast(0L)
+                try {
+                    // Apply debouncing to prevent too frequent updates
+                    val currentTime = System.currentTimeMillis()
+                    if (currentTime - lastEventProcessingTime < MIN_EVENT_PROCESSING_INTERVAL) {
+                        return
+                    }
+                    lastEventProcessingTime = currentTime
                     
-                    // Update selected track when media item changes (e.g., when next/previous is clicked)
-                    val currentIndex = player.currentMediaItemIndex
-                    if (currentIndex >= 0 && currentIndex < player.mediaItemCount) {
-                        val currentUri = player.getMediaItemAt(currentIndex).localConfiguration?.uri
-                        currentUri?.let { uri ->
-                            // First try to find the track in the current queue songs
-                            // This ensures we're using the correct track instance from the active queue
-                            val newTrack = if (currentQueueSongs.isNotEmpty()) {
-                                currentQueueSongs.find { it.uri == uri }
-                            } else {
-                                musicLibrary.getAllMusicFiles().find { it.uri == uri }
-                            }
-                            
-                            if (newTrack != null && newTrack != selectedTrack) {
-                                selectedTrack = newTrack
-                                musicLibrary.setCurrentlyPlayingTrack(newTrack)
-                                println("DEBUG: Track changed to ${newTrack.title} from ${activeQueueSource}")
+                    if (events.containsAny(Player.EVENT_POSITION_DISCONTINUITY, Player.EVENT_MEDIA_ITEM_TRANSITION)) {
+                        duration = player.duration.coerceAtLeast(0L)
+                        
+                        // Update selected track when media item changes (e.g., when next/previous is clicked)
+                        val currentIndex = player.currentMediaItemIndex
+                        if (currentIndex >= 0 && currentIndex < player.mediaItemCount) {
+                            val currentUri = player.getMediaItemAt(currentIndex).localConfiguration?.uri
+                            currentUri?.let { uri ->
+                                // First try to find the track in the current queue songs
+                                // This ensures we're using the correct track instance from the active queue
+                                val newTrack = if (currentQueueSongs.isNotEmpty()) {
+                                    currentQueueSongs.find { it.uri == uri }
+                                } else {
+                                    musicLibrary.getAllMusicFiles().find { it.uri == uri }
+                                }
+                                
+                                if (newTrack != null && newTrack != selectedTrack) {
+                                    selectedTrack = newTrack
+                                    musicLibrary.setCurrentlyPlayingTrack(newTrack)
+                                    println("DEBUG: Track changed to ${newTrack.title} from ${activeQueueSource}")
+                                }
                             }
                         }
                     }
+                } catch (e: Exception) {
+                    println("ERROR: Exception in onEvents: ${e.message}")
                 }
             }
             
             override fun onPlaybackStateChanged(state: Int) {
-                if (state == Player.STATE_READY) {
-                    duration = exoPlayer.duration.coerceAtLeast(0L)
+                try {
+                    if (state == Player.STATE_READY) {
+                        duration = exoPlayer.duration.coerceAtLeast(0L)
+                    }
+                } catch (e: Exception) {
+                    println("ERROR: Exception in onPlaybackStateChanged: ${e.message}")
                 }
             }
         }
@@ -345,15 +367,38 @@ fun MainApp(
         }
     }
     
-    // Update current position periodically with more frequent updates for smoother slider movement
+    // Update current position periodically with optimized update frequency to prevent ANRs
     LaunchedEffect(isPlaying) {
-        while (isPlaying) {
-            currentPosition = exoPlayer.currentPosition.coerceAtLeast(0L)
-            // Update duration as well in case it wasn't properly set
-            if (duration <= 0 && exoPlayer.duration > 0) {
-                duration = exoPlayer.duration
+        try {
+            while (isPlaying) {
+                try {
+                    // Use a less frequent update interval to reduce UI pressure
+                    // 200ms is still smooth enough for the slider but reduces CPU usage by 50%
+                    delay(200) 
+                    
+                    try {
+                        // Update position safely
+                        val position = exoPlayer.currentPosition
+                        if (position >= 0) {
+                            currentPosition = position
+                        }
+                        
+                        // Update duration as well in case it wasn't properly set, but less frequently
+                        val playerDuration = exoPlayer.duration
+                        if (duration <= 0 && playerDuration > 0) {
+                            duration = playerDuration
+                        }
+                    } catch (e: Exception) {
+                        // Ignore ExoPlayer access errors
+                    }
+                } catch (e: Exception) {
+                    // Catch any exceptions to prevent coroutine cancellation
+                    println("ERROR: Exception in position update loop: ${e.message}")
+                    delay(1000) // Longer delay if there was an error
+                }
             }
-            delay(100) // Update 10 times per second for smoother slider movement
+        } catch (e: Exception) {
+            println("ERROR: Fatal exception in position update coroutine: ${e.message}")
         }
     }
     
@@ -365,35 +410,89 @@ fun MainApp(
                 title = it.title ?: "Unknown",
                 artist = it.artist ?: "Unknown"
             )
+            // Force an immediate notification update
+            musicService?.updateNotificationNow()
             println("DEBUG: Updated music service with track: ${it.title} by ${it.artist}")
         }
     }
     
-    // Function to load music files from the device
+    // Function to load music files from the device with optimizations to prevent ANRs
     suspend fun loadAllMusic() {
         isLoading = true
         try {
-            val files = com.example.jamzzz.loadAllMusicFilesFromDevice(context, exoPlayer, initialTrackId)
-            musicFiles = files
-            
-            // Set the music files in the MusicLibrary for later use
-            musicLibrary.setAllMusicFiles(files)
-            
-            // If we have an initialTrackId, try to select that track
-            if (initialTrackId != null) {
-                val track = files.find { it.id == initialTrackId }
-                if (track != null) {
-                    selectedTrack = track
+            // Use withContext to ensure we're on the IO dispatcher for heavy operations
+            withContext(Dispatchers.IO) {
+                try {
+                    // Disable online metadata fetching by default to prevent ANRs
+                    val files = com.example.jamzzz.loadAllMusicFilesFromDevice(context, null, null, false)
                     
-                    // Initialize ExoPlayer with the selected track
-                    exoPlayer.setMediaItem(MediaItem.fromUri(track.uri))
-                    exoPlayer.prepare()
-                    // Update the music service with the track information
-                    updateMusicService(track)
-                    // Don't auto-play, let the user click play
+                    // Switch back to the Main dispatcher for UI updates
+                    withContext(Dispatchers.Main) {
+                        musicFiles = files
+                        
+                        // Set the music files in the MusicLibrary for later use
+                        musicLibrary.setAllMusicFiles(files)
+                        
+                        // If we have an initialTrackId, try to select that track
+                        if (initialTrackId != null) {
+                            val track = files.find { it.id == initialTrackId }
+                            if (track != null) {
+                                selectedTrack = track
+                                
+                                try {
+                                    // Set up the queue with all songs
+                                    println("DEBUG: Setting up initial queue with all songs")
+                                    // Store all songs for proper queue navigation
+                                    val allSongs = ArrayList(files)
+                                    currentQueueSongs = allSongs
+                                    activeQueueSource = "AllSongs"
+                                    
+                                    // Stop playback and clear the current playlist
+                                    exoPlayer.stop()
+                                    exoPlayer.clearMediaItems()
+                                    
+                                    // Find the index of the selected track
+                                    val selectedIndex = allSongs.indexOfFirst { it.id == track.id }
+                                    println("DEBUG: Selected track ${track.title} at index $selectedIndex")
+                                    
+                                    // Add all songs to the queue
+                                    for (song in allSongs) {
+                                        val mediaItem = MediaItem.Builder()
+                                            .setUri(song.uri)
+                                            .setMediaId(song.id.toString())
+                                            .build()
+                                        exoPlayer.addMediaItem(mediaItem)
+                                    }
+                                    
+                                    // Seek to the selected track
+                                    if (selectedIndex >= 0) {
+                                        exoPlayer.seekTo(selectedIndex, 0)
+                                    }
+                                    
+                                    // Prepare the player
+                                    exoPlayer.prepare()
+                                    
+                                    // Update the music service with the track information
+                                    updateMusicService(track)
+                                    // Don't auto-play, let the user click play
+                                    
+                                    // Verify the queue is set up correctly
+                                    println("DEBUG: ExoPlayer queue has ${exoPlayer.mediaItemCount} items")
+                                    println("DEBUG: ExoPlayer is now at index ${exoPlayer.currentMediaItemIndex}")
+                                } catch (e: Exception) {
+                                    println("ERROR: Failed to initialize ExoPlayer: ${e.message}")
+                                    e.printStackTrace()
+                                }
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    println("ERROR: Failed to load music files: ${e.message}")
+                    e.printStackTrace()
                 }
             }
         } catch (e: Exception) {
+            println("ERROR: Fatal exception in loadAllMusic: ${e.message}")
             e.printStackTrace()
         } finally {
             isLoading = false
@@ -691,62 +790,104 @@ fun MainApp(
                     }
                     
                     val previousTrackAction: () -> Unit = {
-                        // Use the ExoPlayer's built-in previous functionality
-                        // This will use the queue that was set up by queueSongsFromPlaylist
-                        if (exoPlayer.hasPreviousMediaItem()) {
-                            exoPlayer.seekToPrevious()
-                            
-                            // Update the selected track based on the current media item
-                            val currentMediaItem = exoPlayer.currentMediaItem
-                            if (currentMediaItem != null) {
-                                val currentUri = currentMediaItem.localConfiguration?.uri
-                                if (currentUri != null) {
-                                    // Find the track in the current queue
-                                    val track = currentQueueSongs.find { it.uri == currentUri }
-                                    if (track != null) {
-                                        selectedTrack = track
-                                        // Update the currently playing track in MusicLibrary
-                                        musicLibrary.setCurrentlyPlayingTrack(track)
-                                        // Save track selection to preferences
-                                        saveCurrentState()
-                                        // Update the music service with track information
-                                        updateMusicService(track)
-                                        println("DEBUG: Moved to previous track: ${track.title}")
+                        println("DEBUG: Previous track action triggered in PlayerUI")
+                        try {
+                            // Only proceed if we have a queue set up
+                            if (currentQueueSongs.isNotEmpty()) {
+                                // Use the ExoPlayer's built-in previous functionality
+                                if (exoPlayer.hasPreviousMediaItem()) {
+                                    println("DEBUG: ExoPlayer has previous media item, seeking to previous")
+                                    // First seek to the beginning if we're more than 3 seconds into the song
+                                    if (exoPlayer.currentPosition > 3000) {
+                                        println("DEBUG: Current position > 3s, seeking to beginning of current track")
+                                        exoPlayer.seekTo(0)
+                                    } else {
+                                        // Otherwise go to the previous track
+                                        println("DEBUG: Seeking to previous track")
+                                        exoPlayer.seekToPrevious()
+                                        
+                                        // Update the selected track based on the current media item
+                                        val currentMediaItem = exoPlayer.currentMediaItem
+                                        if (currentMediaItem != null) {
+                                            val currentUri = currentMediaItem.localConfiguration?.uri
+                                            if (currentUri != null) {
+                                                // Find the track in the current queue
+                                                val track = currentQueueSongs.find { it.uri == currentUri }
+                                                if (track != null) {
+                                                    selectedTrack = track
+                                                    // Update the currently playing track in MusicLibrary
+                                                    musicLibrary.setCurrentlyPlayingTrack(track)
+                                                    // Save track selection to preferences
+                                                    saveCurrentState()
+                                                    // Update the music service with track information
+                                                    updateMusicService(track)
+                                                    println("DEBUG: Moved to previous track: ${track.title}")
+                                                } else {
+                                                    println("DEBUG: Could not find track in queue for URI: $currentUri")
+                                                }
+                                            } else {
+                                                println("DEBUG: Current media item has null URI")
+                                            }
+                                        } else {
+                                            println("DEBUG: Current media item is null after seeking to previous")
+                                        }
                                     }
+                                } else {
+                                    println("DEBUG: No previous track available in the queue")
                                 }
+                            } else {
+                                println("DEBUG: Queue is empty, cannot move to previous track")
                             }
-                        } else {
-                            println("DEBUG: No previous track available in the queue")
+                        } catch (e: Exception) {
+                            println("ERROR: Exception in previousTrackAction: ${e.message}")
+                            e.printStackTrace()
                         }
                     }
                     
                     val nextTrackAction: () -> Unit = {
-                        // Use the ExoPlayer's built-in next functionality
-                        // This will use the queue that was set up by queueSongsFromPlaylist
-                        if (exoPlayer.hasNextMediaItem()) {
-                            exoPlayer.seekToNext()
-                            
-                            // Update the selected track based on the current media item
-                            val currentMediaItem = exoPlayer.currentMediaItem
-                            if (currentMediaItem != null) {
-                                val currentUri = currentMediaItem.localConfiguration?.uri
-                                if (currentUri != null) {
-                                    // Find the track in the current queue
-                                    val track = currentQueueSongs.find { it.uri == currentUri }
-                                    if (track != null) {
-                                        selectedTrack = track
-                                        // Update the currently playing track in MusicLibrary
-                                        musicLibrary.setCurrentlyPlayingTrack(track)
-                                        // Save track selection to preferences
-                                        saveCurrentState()
-                                        // Update the music service with track information
-                                        updateMusicService(track)
-                                        println("DEBUG: Moved to next track: ${track.title}")
+                        println("DEBUG: Next track action triggered in PlayerUI")
+                        try {
+                            // Only proceed if we have a queue set up
+                            if (currentQueueSongs.isNotEmpty()) {
+                                // Use the ExoPlayer's built-in next functionality
+                                if (exoPlayer.hasNextMediaItem()) {
+                                    println("DEBUG: ExoPlayer has next media item, seeking to next")
+                                    exoPlayer.seekToNext()
+                                    
+                                    // Update the selected track based on the current media item
+                                    val currentMediaItem = exoPlayer.currentMediaItem
+                                    if (currentMediaItem != null) {
+                                        val currentUri = currentMediaItem.localConfiguration?.uri
+                                        if (currentUri != null) {
+                                            // Find the track in the current queue
+                                            val track = currentQueueSongs.find { it.uri == currentUri }
+                                            if (track != null) {
+                                                selectedTrack = track
+                                                // Update the currently playing track in MusicLibrary
+                                                musicLibrary.setCurrentlyPlayingTrack(track)
+                                                // Save track selection to preferences
+                                                saveCurrentState()
+                                                // Update the music service with track information
+                                                updateMusicService(track)
+                                                println("DEBUG: Moved to next track: ${track.title}")
+                                            } else {
+                                                println("DEBUG: Could not find track in queue for URI: $currentUri")
+                                            }
+                                        } else {
+                                            println("DEBUG: Current media item has null URI")
+                                        }
+                                    } else {
+                                        println("DEBUG: Current media item is null after seeking to next")
                                     }
+                                } else {
+                                    println("DEBUG: No next track available in the queue")
                                 }
+                            } else {
+                                println("DEBUG: Queue is empty, cannot move to next track")
                             }
-                        } else {
-                            println("DEBUG: No next track available in the queue")
+                        } catch (e: Exception) {
+                            println("ERROR: Exception in nextTrackAction: ${e.message}")
+                            e.printStackTrace()
                         }
                     }
                     

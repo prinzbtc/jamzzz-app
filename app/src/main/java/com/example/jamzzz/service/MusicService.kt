@@ -34,6 +34,7 @@ class MusicService : Service() {
         private const val ACTION_PAUSE = "com.example.jamzzz.ACTION_PAUSE"
         private const val ACTION_PREVIOUS = "com.example.jamzzz.ACTION_PREVIOUS"
         private const val ACTION_NEXT = "com.example.jamzzz.ACTION_NEXT"
+        private const val PROGRESS_UPDATE_INTERVAL = 1000L // Update progress every second
     }
 
     private val binder = MusicBinder()
@@ -41,6 +42,12 @@ class MusicService : Service() {
     private var currentTrackTitle: String = "Unknown"
     private var currentArtist: String = "Unknown"
     private lateinit var mediaSession: MediaSessionCompat
+    
+    // For progress updates
+    private var progressUpdateHandler: android.os.Handler? = null
+    private var progressUpdateRunnable: Runnable? = null
+    private var currentProgress: Long = 0
+    private var totalDuration: Long = 0
 
     inner class MusicBinder : Binder() {
         fun getService(): MusicService = this@MusicService
@@ -54,6 +61,9 @@ class MusicService : Service() {
         super.onCreate()
         createNotificationChannel()
         initMediaSession()
+        
+        // Initialize the handler for progress updates
+        progressUpdateHandler = android.os.Handler(android.os.Looper.getMainLooper())
     }
 
     private fun initMediaSession() {
@@ -187,27 +197,56 @@ class MusicService : Service() {
         return START_STICKY
     }
 
+    // Track the last playback state update time to prevent too frequent updates
+    private var lastPlaybackStateUpdateTime = 0L
+    private val MIN_PLAYBACK_UPDATE_INTERVAL = 300L // Minimum time between playback state updates in ms
+    
     private fun updatePlaybackState(isPlaying: Boolean) {
-        val state = if (isPlaying) PlaybackStateCompat.STATE_PLAYING else PlaybackStateCompat.STATE_PAUSED
-        mediaSession.setPlaybackState(
-            PlaybackStateCompat.Builder()
-                .setState(
-                    state,
-                    exoPlayer.currentPosition,
-                    1.0f
+        try {
+            val currentTime = System.currentTimeMillis()
+            
+            // Skip updates that are too close together (debouncing)
+            if (currentTime - lastPlaybackStateUpdateTime < MIN_PLAYBACK_UPDATE_INTERVAL) {
+                return
+            }
+            
+            lastPlaybackStateUpdateTime = currentTime
+            
+            // Update current progress
+            if (::exoPlayer.isInitialized) {
+                currentProgress = exoPlayer.currentPosition
+                if (totalDuration <= 0 && exoPlayer.duration > 0) {
+                    totalDuration = exoPlayer.duration
+                }
+            }
+            
+            // Update playback state in a try-catch block to prevent crashes
+            try {
+                val state = if (isPlaying) PlaybackStateCompat.STATE_PLAYING else PlaybackStateCompat.STATE_PAUSED
+                mediaSession.setPlaybackState(
+                    PlaybackStateCompat.Builder()
+                        .setState(
+                            state,
+                            currentProgress,
+                            1.0f
+                        )
+                        .setActions(
+                            PlaybackStateCompat.ACTION_PLAY or
+                            PlaybackStateCompat.ACTION_PAUSE or
+                            PlaybackStateCompat.ACTION_SKIP_TO_NEXT or
+                            PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS
+                        )
+                        .build()
                 )
-                .setActions(
-                    PlaybackStateCompat.ACTION_PLAY or
-                    PlaybackStateCompat.ACTION_PAUSE or
-                    PlaybackStateCompat.ACTION_SKIP_TO_NEXT or
-                    PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS
-                )
-                .build()
-        )
-        
-        // Update notification to reflect current playback state
-        val notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
-        notificationManager.notify(NOTIFICATION_ID, createNotification())
+            } catch (e: Exception) {
+                println("ERROR: Failed to update media session state: ${e.message}")
+            }
+            
+            // Use the optimized updateNotification method which already handles threading
+            updateNotification()
+        } catch (e: Exception) {
+            println("ERROR: Exception in updatePlaybackState: ${e.message}")
+        }
     }
 
     fun setPlayer(player: ExoPlayer) {
@@ -218,9 +257,21 @@ class MusicService : Service() {
             override fun onPlaybackStateChanged(playbackState: Int) {
                 super.onPlaybackStateChanged(playbackState)
                 try {
+                    // Update duration when playback state changes
+                    if (playbackState == Player.STATE_READY) {
+                        totalDuration = player.duration
+                    }
+                    
                     updatePlaybackState(player.isPlaying)
                     // Update notification when playback state changes
                     updateNotification()
+                    
+                    // Start or stop progress updates based on playback state
+                    if (player.isPlaying) {
+                        startProgressUpdates()
+                    } else {
+                        stopProgressUpdates()
+                    }
                 } catch (e: Exception) {
                     // Log error but don't crash
                     println("ERROR: Failed to update playback state: ${e.message}")
@@ -233,6 +284,13 @@ class MusicService : Service() {
                     updatePlaybackState(isPlaying)
                     // Update notification when playing state changes
                     updateNotification()
+                    
+                    // Start or stop progress updates based on playing state
+                    if (isPlaying) {
+                        startProgressUpdates()
+                    } else {
+                        stopProgressUpdates()
+                    }
                 } catch (e: Exception) {
                     // Log error but don't crash
                     println("ERROR: Failed to update playback state: ${e.message}")
@@ -243,18 +301,37 @@ class MusicService : Service() {
                 super.onMediaItemTransition(mediaItem, reason)
                 // When the track changes, update the notification
                 try {
+                    // Reset duration for the new track
+                    totalDuration = player.duration
                     // The PlayerUI should update the track info, but we'll update the notification anyway
                     updateNotification()
                 } catch (e: Exception) {
                     println("ERROR: Failed to handle media item transition: ${e.message}")
                 }
             }
+            
+            override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) {
+                super.onPositionDiscontinuity(oldPosition, newPosition, reason)
+                // Update current progress when position changes abruptly (e.g., seeking)
+                currentProgress = player.currentPosition
+                updateNotification()
+            }
         })
         
         try {
+            // Initialize duration
+            if (player.duration > 0) {
+                totalDuration = player.duration
+            }
+            
             // Create notification and start foreground service
             val notification = createNotification()
             startForeground(NOTIFICATION_ID, notification)
+            
+            // Start progress updates if already playing
+            if (player.isPlaying) {
+                startProgressUpdates()
+            }
         } catch (e: Exception) {
             // If notification creation fails, use a simple notification instead
             println("ERROR: Failed to create media notification: ${e.message}")
@@ -264,6 +341,7 @@ class MusicService : Service() {
     }
 
     fun updateTrackInfo(title: String, artist: String) {
+        println("DEBUG: MusicService.updateTrackInfo called with title=$title, artist=$artist")
         currentTrackTitle = title
         currentArtist = artist
         
@@ -272,11 +350,122 @@ class MusicService : Service() {
     }
     
     /**
+     * Force an immediate notification update without debouncing
+     * This should be called when track information changes to ensure
+     * the notification is updated right away
+     */
+    fun updateNotificationNow() {
+        println("DEBUG: Forcing immediate notification update")
+        // Create and update notification on a background thread without debouncing
+        Thread {
+            try {
+                // Get current position from ExoPlayer if initialized
+                if (::exoPlayer.isInitialized) {
+                    currentProgress = exoPlayer.currentPosition
+                    if (totalDuration <= 0 && exoPlayer.duration > 0) {
+                        totalDuration = exoPlayer.duration
+                    }
+                }
+                
+                // Create a new notification
+                val notification = createNotification()
+                
+                // Update the notification
+                val notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+                notificationManager.notify(NOTIFICATION_ID, notification)
+                
+                // Also update the foreground service notification
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    startForeground(NOTIFICATION_ID, notification)
+                }
+                
+                println("DEBUG: Notification updated with title=$currentTrackTitle, artist=$currentArtist, progress=$currentProgress, duration=$totalDuration")
+            } catch (e: Exception) {
+                println("ERROR: Failed to update notification immediately: ${e.message}")
+                e.printStackTrace()
+            }
+        }.start()
+    }
+    
+    // Track the last notification update time to prevent too frequent updates
+    private var lastNotificationUpdateTime = 0L
+    private val MIN_UPDATE_INTERVAL = 500L // Minimum time between notification updates in ms
+    
+    /**
      * Updates the notification with current playback state and track info
+     * Uses debouncing to prevent too frequent updates which can cause ANRs
      */
     private fun updateNotification() {
-        val notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
-        notificationManager.notify(NOTIFICATION_ID, createNotification())
+        val currentTime = System.currentTimeMillis()
+        
+        // Skip updates that are too close together (debouncing)
+        if (currentTime - lastNotificationUpdateTime < MIN_UPDATE_INTERVAL) {
+            return
+        }
+        
+        lastNotificationUpdateTime = currentTime
+        
+        // Move notification creation and update to a background thread
+        Thread {
+            try {
+                // Get current position from ExoPlayer if initialized
+                if (::exoPlayer.isInitialized) {
+                    currentProgress = exoPlayer.currentPosition
+                    if (totalDuration <= 0 && exoPlayer.duration > 0) {
+                        totalDuration = exoPlayer.duration
+                    }
+                }
+                
+                val notification = createNotification()
+                val notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+                notificationManager.notify(NOTIFICATION_ID, notification)
+            } catch (e: Exception) {
+                println("ERROR: Failed to update notification: ${e.message}")
+            }
+        }.start()
+    }
+    
+    /**
+     * Starts periodic progress updates for the notification
+     */
+    private fun startProgressUpdates() {
+        // Stop any existing updates first
+        stopProgressUpdates()
+        
+        // Create a new runnable for progress updates
+        progressUpdateRunnable = Runnable {
+            // Update notification with current progress
+            updateNotification()
+            
+            // Schedule the next update
+            progressUpdateHandler?.postDelayed(progressUpdateRunnable!!, PROGRESS_UPDATE_INTERVAL)
+        }
+        
+        // Start the updates
+        progressUpdateHandler?.post(progressUpdateRunnable!!)
+    }
+    
+    /**
+     * Stops periodic progress updates
+     */
+    private fun stopProgressUpdates() {
+        progressUpdateRunnable?.let { runnable ->
+            progressUpdateHandler?.removeCallbacks(runnable)
+        }
+        progressUpdateRunnable = null
+    }
+    
+    /**
+     * Formats duration in milliseconds to MM:SS format
+     */
+    private fun formatDuration(durationMs: Long): String {
+        if (durationMs <= 0) return "0:00"
+        
+        val totalSeconds = durationMs / 1000
+        val minutes = totalSeconds / 60
+        val seconds = totalSeconds % 60
+        
+        return String.format("%d:%02d", minutes, seconds)
     }
     
     /**
@@ -307,54 +496,53 @@ class MusicService : Service() {
                 description = "Channel for Jamzzz music playback"
                 lightColor = Color.BLUE
                 setShowBadge(true)
+                enableVibration(false) // No vibration for media notifications
+                lockscreenVisibility = Notification.VISIBILITY_PUBLIC // Show on lock screen
             }
 
             val notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
             notificationManager.createNotificationChannel(channel)
+            println("DEBUG: Created notification channel $CHANNEL_ID")
         }
     }
 
     private fun createNotification(): Notification {
+        println("DEBUG: Creating notification with title=$currentTrackTitle, artist=$currentArtist, progress=$currentProgress, duration=$totalDuration")
+        
+        // Create direct action intents instead of media button intents
+        // Play/Pause action
+        val playPauseIntent = Intent(this, MusicService::class.java).apply {
+            action = if (::exoPlayer.isInitialized && exoPlayer.isPlaying) ACTION_PAUSE else ACTION_PLAY
+        }
+        val playPausePendingIntent = PendingIntent.getService(
+            this, 1, playPauseIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        
+        // Previous action
+        val previousIntent = Intent(this, MusicService::class.java).apply {
+            action = ACTION_PREVIOUS
+        }
+        val previousPendingIntent = PendingIntent.getService(
+            this, 2, previousIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        
+        // Next action
+        val nextIntent = Intent(this, MusicService::class.java).apply {
+            action = ACTION_NEXT
+        }
+        val nextPendingIntent = PendingIntent.getService(
+            this, 3, nextIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        
         // Create an intent to launch the app when the notification is tapped
         val contentIntent = Intent(this, PlayerUI::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
         }
         val contentPendingIntent = PendingIntent.getActivity(
             this, 0, contentIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        // Create media session-based pending intents for media controls using MediaButtonReceiver
-        // This is the recommended way to create notification actions that work with MediaSession
-        
-        // Play/Pause action
-        val playPauseIntent = Intent(Intent.ACTION_MEDIA_BUTTON)
-        val playPauseKeyEvent = if (::exoPlayer.isInitialized && exoPlayer.isPlaying) {
-            KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PAUSE)
-        } else {
-            KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY)
-        }
-        playPauseIntent.putExtra(Intent.EXTRA_KEY_EVENT, playPauseKeyEvent)
-        val playPausePendingIntent = PendingIntent.getBroadcast(
-            this, 1, playPauseIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-        
-        // Previous action
-        val previousIntent = Intent(Intent.ACTION_MEDIA_BUTTON)
-        val previousKeyEvent = KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PREVIOUS)
-        previousIntent.putExtra(Intent.EXTRA_KEY_EVENT, previousKeyEvent)
-        val previousPendingIntent = PendingIntent.getBroadcast(
-            this, 2, previousIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-        
-        // Next action
-        val nextIntent = Intent(Intent.ACTION_MEDIA_BUTTON)
-        val nextKeyEvent = KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_NEXT)
-        nextIntent.putExtra(Intent.EXTRA_KEY_EVENT, nextKeyEvent)
-        val nextPendingIntent = PendingIntent.getBroadcast(
-            this, 3, nextIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
@@ -369,45 +557,48 @@ class MusicService : Service() {
         val isPlaying = ::exoPlayer.isInitialized && exoPlayer.isPlaying
         val playPauseIcon = if (isPlaying) R.drawable.ic_pause else R.drawable.ic_play
 
+        // Format the progress and duration for the subtitle
+        val progressText = formatDuration(currentProgress)
+        val durationText = formatDuration(totalDuration)
+        val progressInfo = if (totalDuration > 0) "$progressText / $durationText" else ""
+        
         // Create a media style with the media session token
         val mediaStyle = MediaStyle()
             .setMediaSession(mediaSession.sessionToken)
             .setShowActionsInCompactView(0, 1, 2) // Show previous, play/pause, next in compact view
-
+        
         // Create notification builder with basic info
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
+            // Force the title to be visible by setting it directly
             .setContentTitle(currentTrackTitle)
             .setContentText(currentArtist)
+            .setSubText(progressInfo) // Show progress as subtext
             .setContentIntent(contentPendingIntent)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setStyle(mediaStyle)
             .setOngoing(true)
+            .setShowWhen(false) // Don't show the time the notification was posted
             
-        // Try to set the small icon
-        try {
-            builder.setSmallIcon(R.drawable.ic_music_note)
-        } catch (e: Exception) {
-            // If the drawable is not available, use a default system icon
-            builder.setSmallIcon(android.R.drawable.ic_media_play)
+        // Add progress bar if we have valid duration
+        if (totalDuration > 0) {
+            builder.setProgress(totalDuration.toInt(), currentProgress.toInt(), false)
         }
+            
+        // Set the small icon - use a system icon that's guaranteed to exist
+        builder.setSmallIcon(android.R.drawable.ic_media_play)
         
         // Set the large icon if available
         if (largeIcon != null) {
             builder.setLargeIcon(largeIcon)
         }
         
-        // Try to add media control actions
-        try {
-            builder.addAction(R.drawable.ic_previous, "Previous", previousPendingIntent)
-            builder.addAction(playPauseIcon, if (isPlaying) "Pause" else "Play", playPausePendingIntent)
-            builder.addAction(R.drawable.ic_next, "Next", nextPendingIntent)
-        } catch (e: Exception) {
-            // If the drawable resources are not available, add actions without icons
-            builder.addAction(0, "Previous", previousPendingIntent)
-            builder.addAction(0, if (isPlaying) "Pause" else "Play", playPausePendingIntent)
-            builder.addAction(0, "Next", nextPendingIntent)
-        }
+        // Add media control actions using system icons that are guaranteed to exist
+        builder.addAction(android.R.drawable.ic_media_previous, "Previous", previousPendingIntent)
+        builder.addAction(if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play, 
+                         if (isPlaying) "Pause" else "Play", 
+                         playPausePendingIntent)
+        builder.addAction(android.R.drawable.ic_media_next, "Next", nextPendingIntent)
         
         return builder.build()
     }
@@ -435,6 +626,9 @@ class MusicService : Service() {
     
     override fun onDestroy() {
         super.onDestroy()
+        // Stop progress updates
+        stopProgressUpdates()
+        
         if (::mediaSession.isInitialized) {
             mediaSession.release()
         }
@@ -450,6 +644,9 @@ class MusicService : Service() {
     override fun onTaskRemoved(rootIntent: Intent?) {
         super.onTaskRemoved(rootIntent)
         println("DEBUG: App swiped away from recents, stopping service and playback")
+        
+        // Stop progress updates
+        stopProgressUpdates()
         
         // Stop playback if it's playing
         if (::exoPlayer.isInitialized && exoPlayer.isPlaying) {
